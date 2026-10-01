@@ -1,0 +1,78 @@
+{
+  "generation_hash": "4d6c8ec669c8eab4b945",
+  "inputs": {
+    "project_root": "/home/Xarasit/projects/emotion_recognition",
+    "renderer_sha256": "8496d0d8b449d64c21b42a9aab3b13fc8a813a430c0695ffd84ad75bb1da7942",
+    "resolved_values": {
+      "config.modules.bmm.implementation_artifacts": "/home/Xarasit/projects/emotion_recognition/_bmad-output/implementation-artifacts",
+      "config.modules.bmm.planning_artifacts": "/home/Xarasit/projects/emotion_recognition/_bmad-output/planning-artifacts",
+      "customization.workflow.activation_steps_append": [],
+      "customization.workflow.activation_steps_prepend": [],
+      "customization.workflow.implementation_handoff": "Launch a subagent with no prior conversation context, with this prompt:\n\n> Read {spec_file} fully and implement it — the spec is the sole source of truth. Load every file listed in its frontmatter `context:` before you start.\n>\n> When done, report what you changed, how you verified it, and anything left incomplete or risky.\n",
+      "customization.workflow.on_complete": "",
+      "customization.workflow.oneshot_review_layers": [
+        {
+          "id": "blind-hunter",
+          "instruction": "Launch a context-free subagent with this prompt:\n\nConduct a review of CONTENT.\nLook for what's missing, not only what's wrong.\nCompute your finding floor N from the size of the changes: N = min(floor(sqrt(kB) + 1), 10), where kB is the changed content's size in kilobytes. State the arithmetic in one line, then find at least N issues to fix or improve.\nOutput a Markdown list of findings only — no severity, priority, or ranking.\nIf the content is empty, stop and say so.\nIf you have zero findings, re-check and keep thinking; do not stop with an empty list.\n\nCONTENT:\nThe changed files in the current worktree. Inspect them directly before reviewing.\n\nDo not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.\n\n",
+          "name": "Blind Hunter"
+        }
+      ],
+      "customization.workflow.open_spec": "",
+      "customization.workflow.persistent_facts": [],
+      "customization.workflow.review_layers": [
+        {
+          "id": "blind-hunter",
+          "instruction": "Launch a context-free subagent with this prompt:\n\nConduct a review of CONTENT.\nLook for what's missing, not only what's wrong.\nCompute your finding floor N from the diff file's size: N = min(floor(sqrt(kB) + 1), 10), where kB is the file's size in kilobytes. State the arithmetic in one line, then find at least N issues to fix or improve.\nOutput a Markdown list of findings only — no severity, priority, or ranking.\nIf the content is empty, stop and say so.\nIf you have zero findings, re-check and keep thinking; do not stop with an empty list.\n\nCONTENT: the unified diff at `{diff_file}`. Read that file — it is the content under review.\n\nDo not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.\n\n",
+          "name": "Blind Hunter"
+        },
+        {
+          "id": "edge-case-hunter",
+          "instruction": "Launch a context-free subagent with this prompt:\n\nRead `{skill-root}/review-prompts/edge-case-hunter.md` completely and follow it as your review instructions.\n\nclaims_file (leave unread until your instructions call for it): {claims_file}\n\nReview content: the unified diff at `{diff_file}`. Read that file — it is the content under review.\n\nDo not invoke any skill, and do not spawn subagents of your own — you are the reviewer. If the instruction file is unreadable, report that exact failure and stop. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.\n\n",
+          "name": "Edge Case Hunter"
+        },
+        {
+          "id": "verification-gap",
+          "instruction": "Launch a context-free subagent with this prompt:\n\nRead `{skill-root}/review-prompts/verification-gap.md` completely and follow it as your review instructions.\n\nReview content: the unified diff at `{diff_file}`. Read that file — it is the content under review.\n\nDo not invoke any skill, and do not spawn subagents of your own — you are the reviewer. If the instruction file is unreadable, report that exact failure and stop. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.\n\n",
+          "name": "Verification Gap Reviewer"
+        }
+      ]
+    },
+    "source_sha256": {
+      "compile-epic-context.md": "6793b15ae85766cee529e6b349e45f2c6ec9e3212019611c29e8c77b4dc4b924",
+      "references/claims-check.md": "50ea17cb89a78ef815286dde2dabfd09f1dc9841d07a10857f88b39ab7b9bd2a",
+      "references/deletion-check.md": "0f1f124e4e957147e89164a272b10bedc694ad0d9ad2618c8610ac74ee9cb0da",
+      "review-prompts/edge-case-hunter.md": "8fc046af1cbf4ecc928207cec75e29c3c260adb86cc7da77537ade3b3a3b9448",
+      "review-prompts/verification-gap.md": "45ab0b8c4c56c5c055c97a293a8591a67e256d0b1a2058ce1f093cd866be8d03",
+      "spec-template.md": "e217325964857ebd90a9508bf171eddc2c4ad1b0b9b32a119775ac5c015695fd",
+      "step-01-clarify-and-route.md": "e36bdc7508025f71b94224dd2d6fb10bd9a08f47e93a3fb2c3726bfb2936a46b",
+      "step-02-plan.md": "8b99d5404a31fae38b5b64bcfbf08e620186aa026ade4abaca9b6fe57b082f33",
+      "step-03-implement.md": "9ff7e4c1e61c98c4fa5a719743b50acbfb3c9ce1eee912cd3d9878be510ef312",
+      "step-04-review.md": "8c96b9daf45658507ed10fbe096b74ebe514df068413286bad3d70b6211e2022",
+      "step-05-present.md": "281efed9ebdebbe9842fb2ad0495f9e08d1003fa3d05670c529df815fb96a0ca",
+      "step-oneshot.md": "6bad4230893b5f7be08d43b81d3f4d8d6e825d872b1c4fdafcc208b9a04fe078",
+      "sync-sprint-status.md": "7ff44d21f5d813f4993780271eec8df2fce1373f525ff80e595b7c10618c4c36",
+      "workflow.md": "481ff00ef349a9c7845feca02bbfd5722b1e318ccabac858355da6c90c2d8a39"
+    }
+  },
+  "outputs": {
+    "compile-epic-context.md": "6793b15ae85766cee529e6b349e45f2c6ec9e3212019611c29e8c77b4dc4b924",
+    "references/claims-check.md": "50ea17cb89a78ef815286dde2dabfd09f1dc9841d07a10857f88b39ab7b9bd2a",
+    "references/deletion-check.md": "0f1f124e4e957147e89164a272b10bedc694ad0d9ad2618c8610ac74ee9cb0da",
+    "review-prompts/edge-case-hunter.md": "8fc046af1cbf4ecc928207cec75e29c3c260adb86cc7da77537ade3b3a3b9448",
+    "review-prompts/verification-gap.md": "45ab0b8c4c56c5c055c97a293a8591a67e256d0b1a2058ce1f093cd866be8d03",
+    "spec-template.md": "e217325964857ebd90a9508bf171eddc2c4ad1b0b9b32a119775ac5c015695fd",
+    "step-01-clarify-and-route.md": "67344f6cdb7569deb7cd81c2c5608728399af89264247471e3b0a720f33f04bc",
+    "step-02-plan.md": "361e3303e833b06b520148de92eda65a66acf064f7c56483ced780d4736d0ed8",
+    "step-03-implement.md": "932dcee6ef239973ea7c9385439f3ed937141b714cf30d654c5e5b11e298e5fe",
+    "step-04-review.md": "b86b985ed7be433dba8f244ff13dae9dea9c07ea3626a112019d5621fbcc2cd4",
+    "step-05-present.md": "0a38d7abe97ca217c53bee5c1f34ba0731e046442d89c4934a62c015e9e62ad1",
+    "step-oneshot.md": "6456f474c2e85d30753fe29a8a37b7f139d69f1e9e7bdd4d82d58aab300c5b09",
+    "sync-sprint-status.md": "e89c27e289e129c237d3916b6d7b5591289031db39103a3eda51819734e6b7b4",
+    "workflow.md": "074ac789b96d4be5455a01e13c1a87bc4dc9d135880b381e93ed6bcf9efd3d9a"
+  },
+  "project_root": "/home/Xarasit/projects/emotion_recognition",
+  "project_slug": "emotion-recognition",
+  "root_hash": "6fb3c67f0deb",
+  "schema_version": 1,
+  "skill": "bmad-build"
+}
