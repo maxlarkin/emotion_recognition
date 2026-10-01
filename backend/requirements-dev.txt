@@ -1,0 +1,7 @@
+# Test-only dependencies (not installed in the runtime images).
+# Shared versions (fastapi, ...) come from requirements.txt via the constraints file.
+# Install with uv (see AGENTS.md): plain pip rejects constraints with extras (uvicorn[standard]).
+-c requirements.txt
+fastapi
+httpx==0.28.1
+pytest==9.1.1

@@ -1,0 +1,46 @@
+# CPU (default):  docker compose up
+# GPU (CUDA):     docker compose --profile gpu up
+# The committed .env sets COMPOSE_PROFILES=cpu; an explicit --profile flag replaces it,
+# so exactly one backend (CPU or GPU) runs and answers at host "backend".
+name: emotion-recognition
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+    image: emotion-recognition/frontend:local
+    ports:
+      - "${APP_PORT:-80}:80"
+    restart: unless-stopped
+
+  backend:
+    profiles: ["cpu"]
+    build:
+      context: ./backend
+      args:
+        VARIANT: cpu
+    image: emotion-recognition/backend:cpu
+    volumes:
+      - data:/data
+    networks:
+      default:
+        aliases: [backend]
+    restart: unless-stopped
+
+  backend-gpu:
+    profiles: ["gpu"]
+    build:
+      context: ./backend
+      args:
+        VARIANT: gpu
+    image: emotion-recognition/backend:gpu
+    gpus: all
+    volumes:
+      - data:/data
+    networks:
+      default:
+        aliases: [backend]
+    restart: unless-stopped
+
+volumes:
+  data:

@@ -1,0 +1,7 @@
+# GPU variant: CUDA 12.6 torch wheels + onnxruntime-gpu (CUDA 12 / cuDNN 9 build).
+# Never install plain `onnxruntime` next to `onnxruntime-gpu`.
+--extra-index-url https://download.pytorch.org/whl/cu126
+-r requirements.txt
+torch==2.9.1+cu126
+torchaudio==2.9.1+cu126
+onnxruntime-gpu==1.23.2

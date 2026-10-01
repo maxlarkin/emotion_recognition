@@ -1,0 +1,36 @@
+/* System fonts only: no remote fonts or CDN assets. */
+:root {
+  --bg: #f6f7f9;
+  --fg: #1d2330;
+  --card: #ffffff;
+  --border: #d9dde5;
+  --ok: #1a7f37;
+  --error: #c62828;
+  --warn-bg: #fff4d6;
+  --warn-fg: #7a5200;
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c;
+    --fg: #e6e9ef;
+    --card: #1e232b;
+    --border: #333a46;
+    --ok: #4cc26a;
+    --error: #ff6b6b;
+    --warn-bg: #3a2f10;
+    --warn-fg: #ffd77a;
+  }
+}
+body { margin: 0; background: var(--bg); color: var(--fg); }
+.page { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+h1 { font-size: 1.75rem; margin: 0 0 16px; }
+h2 { font-size: 1.2rem; margin: 0 0 12px; }
+h3 { font-size: 1rem; margin: 16px 0 8px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+.models { list-style: none; padding: 0; margin: 0; }
+.models li { padding: 4px 0; }
+.ok { color: var(--ok); }
+.error { color: var(--error); }
+.warning { background: var(--warn-bg); color: var(--warn-fg); padding: 8px 12px; border-radius: 6px; }

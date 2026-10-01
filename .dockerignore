@@ -1,0 +1,11 @@
+# Build contexts are ./backend and ./frontend (each has its own .dockerignore).
+# This guards any build run from the repository root.
+.git
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/.pytest_cache
+.models
+data
+_bmad*

@@ -1,0 +1,5 @@
+# Installed with `pip install --no-deps`; their dependencies are pinned in requirements*.txt.
+# emotiefflib: avoids pulling opencv-python (GUI) and plain onnxruntime.
+emotiefflib==1.1.1
+# gigaam 0.2.0 at a fixed commit (PyPI 0.1.0 is stale). Avoids a second onnxruntime in the GPU image.
+gigaam @ https://github.com/salute-developers/GigaAM/archive/7447938d791c4f3e643386ee22c33777004293a5.tar.gz

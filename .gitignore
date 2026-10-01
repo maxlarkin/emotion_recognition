@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+
+# Runtime data, local model downloads, saved images (README: docker save)
+/data/
+/models/
+/.models/
+*.tar
+
+# Local env overrides (the committed .env holds only non-secret defaults)
+.env.local
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

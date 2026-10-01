@@ -1,0 +1,10 @@
+[project]
+name = "emotion-backend"
+version = "0.1.0"
+description = "Real-time emotion recognition MVP backend"
+requires-python = ">=3.11"
+# Dependencies are pinned in requirements*.txt (per variant), see backend/Dockerfile.
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

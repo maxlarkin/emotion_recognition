@@ -1,0 +1,190 @@
+# AGENTS.md — emotion_recognition
+
+Инструкции для ИИ-агентов и разработчиков, работающих в этом репозитории.
+
+## Проект
+
+MVP распознавания эмоций в реальном времени по видео (лицо) и аудио (русская речь). Бэкенд — FastAPI, фронтенд — React + TypeScript + Vite. Запуск только через Docker, работа полностью офлайн. Целевое железо: ноутбук с NVIDIA GPU на 4 ГБ VRAM (RTX 3050 Laptop) и 16 ГБ RAM, ОС Fedora 44 KDE.
+
+## Источники правды
+
+Читать до начала любой задачи:
+
+| Что | Где |
+|---|---|
+| Контракт продукта (CAP-1…CAP-9, ограничения, non-goals) | `_bmad-output/specs/spec-emotion-recognition-mvp/SPEC.md` |
+| Модели, параметры обработки, раскладка репозитория | `_bmad-output/specs/spec-emotion-recognition-mvp/stack.md` |
+| Протокол WebSocket, REST API, формат экспорта | `_bmad-output/specs/spec-emotion-recognition-mvp/interfaces.md` |
+| Диаграммы архитектуры | `_bmad-output/specs/spec-emotion-recognition-mvp/architecture-diagrams.md` |
+| Список и порядок stories | `_bmad-output/specs/spec-emotion-recognition-mvp/stories.yaml` |
+| Спецификации отдельных stories | `_bmad-output/specs/spec-emotion-recognition-mvp/stories/<id>-*.md` |
+| Статусы спринта | `_bmad-output/implementation-artifacts/sprint-status.yaml` |
+| Исследование: обоснование выбора моделей, требования к медиа | `_bmad-output/planning-artifacts/research/technical-realtime-emotion-recognition-2026-10-01/research.md` |
+
+- `SPEC.md` и `stories.yaml` руками не правятся. Их пересобирает `bmad-spec` из `.memlog.md` (в `stories.yaml` — после разбивки на stories).
+- `epics.md` собран из `stories.yaml`. При изменении stories его нужно пересобрать.
+- Блок `<frozen-after-approval>` в спецификации story меняет только человек.
+
+## Обязательные правила
+
+- **Офлайн в рантайме.** Никаких CDN, удалённых шрифтов, загрузок с model hub и `pip`/`npm install` во время работы. Веса моделей скачиваются при `docker build` в `/models` и проверяются по контрольной сумме.
+- **Весь текст интерфейса — на русском.**
+- **Камера и микрофон захватываются в браузере** (`getUserMedia`). Устройства в контейнер не пробрасываются.
+- **Инференс работает вне event loop FastAPI** — в отдельном процессе. Цепочку «источник → очередь → воркер → результаты» не ломать.
+- **В образе ровно один пакет onnxruntime:** `onnxruntime` для CPU-образа или `onnxruntime-gpu` для GPU-образа.
+- **Ключи эмоций всегда одни и те же:** `anger, disgust, fear, happiness, sadness, surprise, neutral`.
+- **Протоколы в `interfaces.md` — фиксированный контракт.** Менять их можно только через обновление спецификации.
+- **Бюджет памяти:** все модели вместе должны помещаться в 4 ГБ VRAM / 16 ГБ RAM. Режим «только CPU» обязан работать.
+
+## Структура
+
+```
+backend/
+  app/          FastAPI: config, api/ (health, files, sessions, export), ws/ (live)
+  inference/    detector, tracker, fer, vad, ser, fusion, worker
+  bench/        бенчмарк производительности (CAP-6)
+  eval/         оценка точности (CAP-7)
+  scripts/      fetch_models.py — загрузка и проверка весов при сборке
+  tests/        pytest
+  Dockerfile    один файл, аргумент VARIANT=cpu|gpu
+frontend/       Vite + React + TS; Dockerfile (сборка в node, затем nginx); nginx.conf проксирует /api и /ws
+docs/           media-requirements.md, scaling-plan.md, benchmark-report.md, evaluation-report.md
+docker-compose.yml, .env (COMPOSE_PROFILES=cpu, APP_PORT=80)
+```
+
+## Особенности Fedora 44
+
+**Docker.** Используется Docker CE, а не podman. Если в системе стоит `podman-docker`, удалите его: он подменяет команду `docker`.
+
+```bash
+sudo dnf install docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER      # затем перелогиниться
+```
+
+Если оболочка была открыта до добавления в группу, выполняйте команды так: `sg docker -c 'docker compose up'`. Другой вариант — `newgrp docker`.
+
+**GPU в контейнерах:**
+
+```bash
+sudo dnf install nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
+docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi   # проверка
+```
+
+**SELinux** работает в режиме Enforcing. Bind-mount каталогов хоста в контейнер делайте с меткой `:Z` (или `:z`), например `-v ./data:/data:Z`. Named volume (`data`) метки не требует.
+
+**VPN и сборка образов.** Если включён VPN с MTU меньше 1500 (например, AmneziaVPN, интерфейс `amn0` с MTU 1280), `pip` внутри `docker compose build` зависает на TLS-рукопожатии (`Read timed out`). Варианты:
+- выключить VPN на время сборки;
+- собрать образ через сеть хоста, а потом запускать без пересборки:
+
+```bash
+docker build --network host --build-arg VARIANT=cpu -t emotion-recognition/backend:cpu backend
+docker build --network host --build-arg VARIANT=gpu -t emotion-recognition/backend:gpu backend
+docker compose up -d --no-build   # или: docker compose --profile gpu up -d --no-build
+```
+
+**Python на хосте — 3.14,** а проект требует 3.11 (как в образе). Локальное окружение создавайте через `uv`:
+
+```bash
+uv venv --python 3.11 backend/.venv
+```
+
+**Node:** системный Node 22 подходит для `frontend/`.
+
+**Браузер** (Firefox или Chromium в KDE): `http://localhost` считается безопасным контекстом, поэтому доступ к камере и микрофону разрешается без HTTPS. Если камеру не видно, проверьте разрешение в браузере и что её не держит другое приложение: `fuser /dev/video0`.
+
+**Порт 80** публикует демон Docker, sudo не нужен. Если порт занят, поменяйте `APP_PORT` в `.env`.
+
+## Команды
+
+### Запуск
+
+```bash
+docker compose up --build                     # CPU-профиль (по умолчанию из .env)
+docker compose --profile gpu up --build       # GPU-профиль (CUDA)
+docker compose up -d && docker compose logs -f backend   # в фоне + логи
+docker compose ps                             # должен работать ровно один бэкенд
+docker compose down                           # остановить (volume data сохраняется)
+docker compose down -v                        # остановить и удалить данные (sessions, uploads)
+```
+
+Приложение: http://localhost. Проверка состояния:
+
+```bash
+curl -s localhost/api/health | python3 -m json.tool
+```
+
+Ожидаемый ответ: `"status":"ok"`, `"device":"cpu"` или `"cuda"`, все четыре модели `true`.
+
+### Тесты
+
+Бэкенд локально:
+
+```bash
+uv venv --python 3.11 backend/.venv
+uv pip install --python backend/.venv -r backend/requirements-dev.txt
+cd backend && .venv/bin/pytest -q
+```
+
+Тесты не входят в образ. Код, зависящий от моделей (stories 1.2+), прогоняйте в полном окружении: `uv pip install --python backend/.venv -r backend/requirements-cpu.txt && uv pip install --python backend/.venv --no-deps -r backend/requirements-nodeps.txt`.
+
+### Фронтенд
+
+```bash
+cd frontend && npm ci
+npm run dev       # http://localhost:5173, проксирует /api и /ws на localhost:8000
+npm run build     # tsc --noEmit + vite build → dist/
+grep -rEo "https?://[^\"' )]*" dist | grep -vE "localhost|www\.w3\.org/"   # должно быть пусто (XML-namespace w3.org допустимы)
+```
+
+Бэкенд для `npm run dev` поднимается локально. Нужны полное окружение (см. «Тесты») и веса в `MODELS_DIR`:
+
+```bash
+cd backend && .venv/bin/python scripts/fetch_models.py --models-dir ../.models   # один раз
+MODELS_DIR=../.models DATA_DIR=/tmp/er-data .venv/bin/uvicorn app.main:app --reload --port 8000
+```
+
+Альтернатива: запустить бэкенд в Docker (`docker compose up backend`) и пробросить его порт 8000.
+
+### Проверка офлайн-режима
+
+Без отключения сети хоста (бэкенд в контейнере вообще без сети):
+
+```bash
+docker run -d --name er-offline --network none emotion-recognition/backend:cpu
+docker exec er-offline python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/api/health').read().decode())"
+docker rm -f er-offline
+```
+
+Полная проверка с отключением сети:
+
+```bash
+docker compose up -d --build                        # собрать с сетью
+nmcli networking off                                # отключить сеть (KDE: NetworkManager)
+docker compose down && docker compose up -d && curl -s localhost/api/health
+nmcli networking on
+```
+
+### Диагностика
+
+```bash
+nvidia-smi                                   # GPU хоста
+docker compose exec backend-gpu nvidia-smi   # GPU в контейнере
+nvidia-smi dmon -s um                        # загрузка GPU и памяти во время бенчмарка
+docker stats                                 # CPU и RAM контейнеров
+docker compose build --no-cache backend      # пересборка с повторной загрузкой весов
+docker system df && docker builder prune     # место, занятое образами и кешем сборки
+```
+
+## Git
+
+- Работа в ветках `feat/<story-id>-<slug>`, например `feat/1-1-skeleton-docker`. В `main` напрямую не коммитить.
+- Сообщения коммитов — в стиле Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `test:`).
+- Не коммитить: `.venv/`, `node_modules/`, `frontend/dist/`, `__pycache__/`, `.pytest_cache/`, веса моделей (`.models/`), данные из volume `data`.
+
+## Процесс BMAD
+
+- Следующая story — по `sprint-status.yaml`. Реализация через `bmad-build`, указав папку спецификации и id story.
+- На stories с `done_checkpoint: true` агент останавливается и ждёт проверки человеком.
+- Если story требует изменить контракт, сначала обновите спецификацию через `bmad-spec`, потом пишите код.

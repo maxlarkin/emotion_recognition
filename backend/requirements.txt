@@ -1,0 +1,28 @@
+# Shared pinned dependencies for both backend variants (CPU and GPU).
+# Variant-specific pins (torch, onnxruntime) live in requirements-cpu.txt / requirements-gpu.txt.
+# Packages installed with --no-deps live in requirements-nodeps.txt.
+
+# --- web ---
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+
+# --- numerics / image ---
+numpy==2.3.5
+pillow==12.3.0
+# emotiefflib declares opencv-python (GUI build, needs libGL). We install emotiefflib with
+# --no-deps and use the headless build of OpenCV 5.x instead (required by YuNet 2026may).
+opencv-python-headless==5.0.0.93
+
+# --- ONNX (gigaam 0.2.0 pins onnx==1.19.*, onnxruntime==1.23.*) ---
+onnx==1.19.1
+
+# --- gigaam 0.2.0 runtime deps (gigaam itself is installed with --no-deps) ---
+hydra-core==1.3.2
+omegaconf==2.3.0
+soundfile==0.13.1
+sentencepiece==0.2.1
+tqdm==4.67.1
+
+# --- silero-vad runtime deps (it requires torch, provided by the variant file) ---
+packaging==25.0
+silero-vad==6.2.3
