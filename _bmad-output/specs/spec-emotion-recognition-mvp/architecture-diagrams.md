@@ -30,6 +30,23 @@ flowchart LR
   SPA -.served to.-> Browser
 ```
 
+## Multi-camera RTSP (CAP-10, built in MVP)
+
+```mermaid
+flowchart LR
+  subgraph demo [profile demo-cams]
+    EMU[camera-emulator: ffmpeg loops demo-videos/cam1..3] --> MTX[MediaMTX rtsp://mediamtx:8554/camN]
+  end
+  IPC[real IP cameras] -.RTSP.-> SRC
+  MTX --> SRC[RTSP source process per stream: PyAV decode, 8 fps sample, audio 16 kHz]
+  SRC --> SLOTS[per-stream latest-frame slots + audio FIFOs]
+  SLOTS --> W[shared inference worker: batched faces, VAD+SER per stream, fusion]
+  W --> RES[results bus]
+  RES --> WSS[FastAPI /ws/streams] --> GRID[React multi-camera grid]
+  RES --> DB[(SQLite sessions kind rtsp)]
+  MON[psutil + NVML] --> WSS
+```
+
 ## Seam for scaling (CAP-9 target, not built in MVP)
 
 ```mermaid

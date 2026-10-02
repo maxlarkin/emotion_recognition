@@ -19,6 +19,16 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
 - **Temporal smoothing:** EMA per track over facial probabilities (default α = 0.4, configurable).
 - **Live audio:** PCM16 mono 16 kHz, 500 ms chunks. SER runs on a sliding 3 s window (hop 1 s), only when VAD marks speech in ≥ 50% of the window.
 - **Fusion:** per shared class, `p = w_face·p_face + w_audio·p_audio`. Defaults: w_face = 0.7, w_audio = 0.3; w_audio = 0 when there is no speech. Classes without an audio counterpart use the face probability only. Renormalise after fusion.
+- **RTSP ingest:**
+  - One source process per stream decodes with PyAV (TCP transport, 5 s open timeout).
+  - Video is sampled to the analysis rate (default 8 fps, minimum 5). The audio track is resampled to 16 kHz mono and windowed like live audio.
+  - Frames and audio go to the shared inference worker. A per-stream latest-frame slot drops stale frames, and the worker batches faces across streams.
+  - On stream loss: reconnect with backoff of 1, 2, 4… seconds, capped at 30 s.
+- **Demo cameras:**
+  - Compose profile `demo-cams` adds two services. `mediamtx` runs `bluenviron/mediamtx`, pinned. `camera-emulator` runs ffmpeg, which loops `demo-videos/cam{1,2,3}.mp4` as H.264 + AAC to `rtsp://mediamtx:8554/cam{1,2,3}` with `-re -stream_loop -1`.
+  - The default stream list (env `DEFAULT_STREAMS`) points at those three URLs.
+  - Clips are openly licensed, with close-up faces and Russian speech. `demo-videos/ATTRIBUTION.md` records the source, author and licence of each.
+- **System load:** `psutil` for CPU and RAM. NVML (`nvidia-ml-py`) for GPU utilisation and VRAM; it reports null in the CPU image or when no GPU is present.
 - **File analysis:** decode with ffmpeg (PyAV). Video sampled at 5 fps. Audio resampled to 16 kHz mono and analysed in the same windows as live audio.
 
 ## Runtime
@@ -35,8 +45,8 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
 ## Repository layout (target)
 
 ```
-backend/   app/ (api, ws, sessions, export), inference/ (detector, fer, vad, ser, fusion, tracker, worker), bench/, eval/
-frontend/  src/ (live, upload, session view, export)
+backend/   app/ (api, ws, sessions, export, streams), sources/ (webcam, rtsp, file), inference/ (detector, fer, vad, ser, fusion, tracker, worker), bench/, eval/
+frontend/  src/ (live, multicam grid, upload, session view, export)
 docs/      media-requirements.md (CAP-8), scaling-plan.md (CAP-9), benchmark-report.md, evaluation-report.md
-docker-compose.yml, backend/Dockerfile (+ gpu variant/arg), frontend/Dockerfile
+demo-videos/ (clips + ATTRIBUTION.md), docker-compose.yml, backend/Dockerfile (+ gpu variant/arg), frontend/Dockerfile
 ```

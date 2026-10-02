@@ -26,13 +26,35 @@ These contracts are fixed between frontend and backend. All timestamps are in mi
 - The client computes latency as `render_time − capture_ts` and shows p50 and p95.
 - `{"type":"session","session_id":"..."}` is sent once after `start`. `{"type":"error","message":"..."}` is sent on failure.
 
+## RTSP streams — WebSocket `/ws/streams`
+
+This socket is for viewing only. The server pushes updates for every active stream, and one socket serves the whole grid.
+
+**Server → client:**
+
+| Kind | Format |
+|---|---|
+| Analysed frame | Binary: 1-byte type `0x11`, 2-byte uint16 `stream_id` length, then that many UTF-8 bytes of `stream_id`, 4-byte uint32 `frame_id`, then the JPEG bytes (longest side ≤ 640 px). |
+| Frame result | Text JSON: `{"type":"stream_result","stream_id":"cam1","frame_id":123,"decode_ts":...,"emit_ts":...,"faces":[...same face objects as frame_result...],"audio":{...same audio block...},"fps":7.9}`. The binary frame with the same `frame_id` is sent just before it. |
+| Stream status | Text JSON: `{"type":"stream_status","stream_id":"cam1","state":"connecting"|"running"|"reconnecting"|"stopped"|"error","message":"..."}` |
+| System load | Text JSON, once per second: `{"type":"system","server_ts":..,"cpu_pct":..,"ram_used_mb":..,"ram_total_mb":..,"gpu_util_pct":..|null,"vram_used_mb":..|null,"vram_total_mb":..|null}` |
+
+**Client → server.** Text JSON. `{"type":"subscribe","stream_ids":["cam1","cam2"]}` limits the subscription; with no subscribe message, the client receives all streams.
+
+- Latency per stream is `client_render_time − decode_ts`. The server clock is used for `decode_ts`, so the client corrects it by the offset measured from `system` messages, which carry `server_ts`.
+- Only the latest analysed frame per stream is sent. If the client falls behind, older frames are dropped.
+
 ## REST `/api`
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | `{"status":"ok","device":"cuda"|"cpu","models":{...loaded}}` |
 | POST | `/api/files` | multipart upload; returns `{"session_id"}` and starts analysis |
-| GET | `/api/sessions` | list sessions: id, kind (`live` or `file`), created_at, duration, status |
+| GET | `/api/streams` | list streams: `id, name, url (credentials masked), state, fps, session_id` |
+| POST | `/api/streams` | `{"name":"Камера 1","url":"rtsp://..."}`; returns `{"id"}`, starts ingest and analysis, creates a session of kind `rtsp` |
+| DELETE | `/api/streams/{id}` | stop the stream; its session becomes finished and exportable |
+| GET | `/api/system` | same payload as the `system` WS message |
+| GET | `/api/sessions` | list sessions: id, kind (`live`, `file` or `rtsp`), created_at, duration, status |
 | GET | `/api/sessions/{id}` | status, progress 0–1, summary (dominant emotion share, faces seen, speech share) |
 | GET | `/api/sessions/{id}/timeline` | full per-frame results (same face object as WS) plus audio windows |
 | GET | `/api/sessions/{id}/media` | the uploaded file, for playback (file sessions only) |
@@ -43,7 +65,8 @@ File-session `status` takes one of these values: `queued`, `processing`, `done`,
 
 ## Export row (CSV columns; JSON = array of same objects)
 
-`session_id, ts_ms, source(face|audio), track_id, box_x, box_y, box_w, box_h, p_anger, p_disgust, p_fear, p_happiness, p_sadness, p_surprise, p_neutral, face_label, audio_label, fused_label, speech`
+`session_id, stream_id, ts_ms, source(face|audio), track_id, box_x, box_y, box_w, box_h, p_anger, p_disgust, p_fear, p_happiness, p_sadness, p_surprise, p_neutral, face_label, audio_label, fused_label, speech`
 
+- `stream_id` is empty for webcam and file sessions.
 - Face rows carry box and face probabilities.
 - Audio rows carry the audio probabilities, mapped to the 7 keys with zeros where there is no audio counterpart, plus `audio_label` and `speech`. Their box columns are empty.

@@ -29,7 +29,7 @@ MVP распознавания эмоций в реальном времени �
 
 - **Офлайн в рантайме.** Никаких CDN, удалённых шрифтов, загрузок с model hub и `pip`/`npm install` во время работы. Веса моделей скачиваются при `docker build` в `/models` и проверяются по контрольной сумме.
 - **Весь текст интерфейса — на русском.**
-- **Камера и микрофон захватываются в браузере** (`getUserMedia`). Устройства в контейнер не пробрасываются.
+- **Веб-камера и микрофон захватываются в браузере** (`getUserMedia`). Устройства в контейнер не пробрасываются. RTSP-потоки (IP-камеры, эмулятор `demo-cams`) принимает бэкенд.
 - **Инференс работает вне event loop FastAPI** — в отдельном процессе. Цепочку «источник → очередь → воркер → результаты» не ломать.
 - **В образе ровно один пакет onnxruntime:** `onnxruntime` для CPU-образа или `onnxruntime-gpu` для GPU-образа.
 - **Ключи эмоций всегда одни и те же:** `anger, disgust, fear, happiness, sadness, surprise, neutral`.
@@ -40,7 +40,8 @@ MVP распознавания эмоций в реальном времени �
 
 ```
 backend/
-  app/          FastAPI: config, api/ (health, files, sessions, export), ws/ (live)
+  app/          FastAPI: config, api/ (health, files, sessions, export, streams, system), ws/ (live, streams)
+  sources/      источники: webcam (WebSocket), rtsp (PyAV), file
   inference/    detector, tracker, fer, vad, ser, fusion, worker
   bench/        бенчмарк производительности (CAP-6)
   eval/         оценка точности (CAP-7)
@@ -48,6 +49,7 @@ backend/
   tests/        pytest
   Dockerfile    один файл, аргумент VARIANT=cpu|gpu
 frontend/       Vite + React + TS; Dockerfile (сборка в node, затем nginx); nginx.conf проксирует /api и /ws
+demo-videos/    открытые ролики для эмулированных камер + ATTRIBUTION.md
 docs/           media-requirements.md, scaling-plan.md, benchmark-report.md, evaluation-report.md
 docker-compose.yml, .env (COMPOSE_PROFILES=cpu, APP_PORT=80)
 ```
