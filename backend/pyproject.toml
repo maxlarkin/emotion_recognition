@@ -8,3 +8,6 @@ requires-python = ">=3.11"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "models: needs the model weights in MODELS_DIR and the full runtime (run inside the backend image)",
+]

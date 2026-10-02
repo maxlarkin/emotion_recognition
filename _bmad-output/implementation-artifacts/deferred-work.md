@@ -18,3 +18,9 @@
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/1-repository-skeleton-and-docker-compose.md`
   summary: "Exactly one backend per compose command" is verified manually only.
   evidence: add a script asserting `docker compose config --services` = {backend, frontend} and with `--profile gpu` = {backend-gpu, frontend} once a CI/check harness exists.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/2-inference-core-with-per-stage-benchmark.md`
+  summary: interfaces.md shows the audio block `probs` with 4 keys (anger, sadness, neutral, happiness) while the inference core emits all 7 emotion keys (zeros for disgust, fear, surprise) per the story 1.2 matrix.
+  evidence: AudioResult.probs from inference.types/worker carries 7 keys; WS stories (1.3/1.4, 1.6) must follow one shape — update interfaces.md via bmad-spec to 7 keys.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/2-inference-core-with-per-stage-benchmark.md`
+  summary: stack.md fusion text ("classes without an audio counterpart use the face probability only; renormalise after fusion") reads differently from the implemented and matrix-pinned `0.7·face + 0.3·audio` (zeros on face-only classes).
+  evidence: inference/fusion.py fuse(); story 1.2 matrix row "Speech window". Clarify stack.md via bmad-spec.

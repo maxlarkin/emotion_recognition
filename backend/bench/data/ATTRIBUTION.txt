@@ -1,0 +1,7 @@
+face.jpg: "astronaut" test image from scikit-image (gitlab.com/scikit-image/data, astronaut.png),
+a NASA photograph of astronaut Eileen Collins. Public domain (work of the US federal government).
+Downscaled to 320x320 JPEG. Used by bench.stages and the model tests as a real face for YuNet.
+
+speech.wav: 4 s excerpt (samples 40000..104000) of examples/c++/aepyx.wav from snakers4/silero-vad
+(github.com/snakers4/silero-vad, commit 1e261b036686cd0017d500ee96acd1c4ba572a9d), MIT License,
+Copyright (c) 2020-present Silero Team. PCM16 mono 16 kHz. Used as real speech for VAD/SER.
