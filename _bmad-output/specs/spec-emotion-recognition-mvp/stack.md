@@ -18,7 +18,7 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
 - **Face tracking:** IoU tracker assigns stable track ids. Detection runs every frame for one stream; detect-every-N is optional for files.
 - **Temporal smoothing:** EMA per track over facial probabilities (default α = 0.4, configurable).
 - **Live audio:** PCM16 mono 16 kHz, 500 ms chunks. SER runs on a sliding 3 s window (hop 1 s), only when VAD marks speech in ≥ 50% of the window.
-- **Fusion:** per shared class, `p = w_face·p_face + w_audio·p_audio`. Defaults: w_face = 0.7, w_audio = 0.3; w_audio = 0 when there is no speech. Classes without an audio counterpart use the face probability only. Renormalise after fusion.
+- **Fusion:** over all 7 keys, `p = renormalise(w_face·p_face + w_audio·p_audio)`. Defaults: w_face = 0.7, w_audio = 0.3. `p_audio` is 0 for disgust, fear and surprise (no SER class), so those keys get only the weighted face term. No speech: w_audio = 0, and the fused distribution equals the face distribution.
 - **RTSP ingest:**
   - One source process per stream decodes with PyAV (TCP transport, 5 s open timeout).
   - Video is sampled to the analysis rate (default 8 fps, minimum 5). The audio track is resampled to 16 kHz mono and windowed like live audio.

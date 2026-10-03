@@ -18,9 +18,10 @@ These contracts are fixed between frontend and backend. All timestamps are in mi
 {"type":"frame_result","frame_id":123,"capture_ts":1727780000123.4,"proc_ms":38.2,
  "faces":[{"track_id":1,"box":[x,y,w,h],"face":{"anger":0.02,...},"face_label":"happiness",
            "fused":{"anger":0.01,...},"fused_label":"happiness","confidence":0.81}],
- "audio":{"speech":true,"probs":{"anger":0.1,"sadness":0.05,"neutral":0.6,"happiness":0.25},"label":"neutral","window_end_ts":...}}
+ "audio":{"speech":true,"probs":{"anger":0.1,"disgust":0.0,"fear":0.0,"happiness":0.25,"sadness":0.05,"surprise":0.0,"neutral":0.6},"label":"neutral","window_end_ts":...}}
 ```
 
+- `audio.probs` always holds all 7 emotion keys. SER has 4 classes, so `disgust`, `fear` and `surprise` are always 0.
 - Box coordinates are relative to the JPEG that was sent. The client scales them to the displayed video.
 - When frames are dropped, the server answers only the latest frame. Dropped `frame_id`s get no reply.
 - The client computes latency as `render_time − capture_ts` and shows p50 and p95.
