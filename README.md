@@ -12,7 +12,7 @@
     и выполните `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`.
   - Windows: достаточно драйвера NVIDIA для Windows с поддержкой WSL2. Docker Desktop пробрасывает GPU сам.
   - Проверка: `docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi`.
-- Свободное место на диске: ~5 ГБ для CPU-режима, ~25 ГБ для GPU-режима (образ GPU ~18 ГБ: CUDA, cuDNN, PyTorch).
+- Свободное место на диске: ~5 ГБ для CPU-режима, ~20 ГБ для GPU-режима (образ GPU ~12,5 ГБ: PyTorch с библиотеками CUDA и cuDNN).
 
 Камера и микрофон захватываются в браузере. В контейнеры их пробрасывать не нужно.
 

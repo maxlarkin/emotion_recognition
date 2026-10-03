@@ -88,7 +88,7 @@ Deliver within 1.5 months a working, fully offline Docker prototype that recogni
   - The export row has the fixed column order `session_id, stream_id, ts_ms, source(face|audio), track_id, box_*, p_<7 keys>, face_label, audio_label, fused_label, speech`. `stream_id` is empty for webcam and file sessions. Audio rows have empty box columns and zeros for classes with no audio counterpart.
 - **Runtime:** Python 3.11, FastAPI/Uvicorn, ONNX Runtime with exactly one package per image (`onnxruntime` for CPU, `onnxruntime-gpu` for GPU), PyTorch only where GigaAM needs it, OpenCV, PyAV, SQLite in the named volume `data`, which also holds uploads.
 - **Frontend:** React + TS + Vite. Canvas overlay on the local `<video>`. Chart library bundled locally. nginx serves the SPA and proxies `/api` and `/ws`.
-- **Docker:** one backend Dockerfile with `VARIANT=cpu|gpu`. The GPU profile uses a CUDA base image and `gpus: all`. Port 80 is configurable via `.env`.
+- **Docker:** one backend Dockerfile with `VARIANT=cpu|gpu`. The GPU profile uses `gpus: all`; both images use `python:3.11-slim`, and CUDA/cuDNN libraries come from the torch `nvidia-*` wheels. Port 80 is configurable via `.env`.
 
 ## UX & Interaction Patterns
 

@@ -37,7 +37,7 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
 - **Inference process:** one worker process holds all models. FastAPI talks to it through `multiprocessing` queues: latest-frame slot of size 1 for live video, bounded FIFO for audio and file jobs.
 - **Frontend:** React + TypeScript + Vite. Canvas overlay on top of the local `<video>` element. Chart library bundled locally, no CDN.
 - **Docker:** `docker compose` with services `frontend` (nginx serving the built SPA and proxying `/api` and `/ws` to the backend) and `backend`.
-  - Profile `gpu` uses the CUDA base image and `gpus: all`; the default profile is CPU-only.
+  - Profile `gpu` uses `gpus: all`; the default profile is CPU-only. Both images share the `python:3.11-slim` base: the GPU image gets CUDA 12.6 / cuDNN 9 libraries from the torch cu126 `nvidia-*` wheels, not from a CUDA base image.
   - Weights are downloaded during `docker build` and baked into the image.
   - A named volume `data` holds SQLite and uploads.
 - **Port:** app served at `http://localhost:80`. Ports are configurable via `.env`.

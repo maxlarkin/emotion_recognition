@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # Single Dockerfile for both backend variants.
 #   docker build --build-arg VARIANT=cpu .   -> python:3.11-slim, CPU torch, onnxruntime
-#   docker build --build-arg VARIANT=gpu .   -> CUDA 12.6 + cuDNN 9 runtime, CUDA torch, onnxruntime-gpu
+#   docker build --build-arg VARIANT=gpu .   -> python:3.11-slim, CUDA torch, onnxruntime-gpu
+#     (CUDA 12.6 / cuDNN 9 user-space libraries come from the torch nvidia-* wheels; the driver from `gpus: all`)
 # All model weights are downloaded and verified at build time and baked into /models.
 ARG VARIANT=cpu
 
@@ -10,12 +11,15 @@ FROM python:3.11.16-slim-bookworm AS base-cpu
 RUN python -m venv /opt/venv
 
 # ---------- GPU base ----------
-FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 AS base-gpu
-# Ubuntu 24.04 ships Python 3.12 (>= 3.11 required).
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && python3 -m venv /opt/venv
+# Same Python as the CPU image. No CUDA base image: torch cu126 already installs the CUDA/cuDNN
+# libraries as nvidia-* wheels, and a cudnn-runtime base would ship them a second time.
+FROM python:3.11.16-slim-bookworm AS base-gpu
+RUN python -m venv /opt/venv
+# onnxruntime-gpu loads the CUDA EP libraries from these wheel directories.
+ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cufft/lib:/opt/venv/lib/python3.11/site-packages/nvidia/curand/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cuda_nvrtc/lib:/opt/venv/lib/python3.11/site-packages/nvidia/nvjitlink/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cusparse/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cusolver/lib
+# Container toolkit: mount the driver libraries (libcuda, NVML) into this non-CUDA image.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # ---------- final ----------
 FROM base-${VARIANT} AS final
