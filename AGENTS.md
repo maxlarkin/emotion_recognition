@@ -107,6 +107,7 @@ docker compose up --build                     # CPU-профиль (по умо�
 docker compose --profile gpu up --build       # GPU-профиль (CUDA)
 docker compose up -d && docker compose logs -f backend   # в фоне + логи
 docker compose ps                             # должен работать ровно один бэкенд
+./scripts/check-compose.sh                    # то же по конфигурации: CPU и GPU профили дают ровно по одному бэкенду
 docker compose down                           # остановить (volume data сохраняется)
 docker compose down -v                        # остановить и удалить данные (sessions, uploads)
 ```
@@ -137,17 +138,21 @@ cd backend && .venv/bin/pytest -q
 cd frontend && npm ci
 npm run dev       # http://localhost:5173, проксирует /api и /ws на localhost:8000
 npm run build     # tsc --noEmit + vite build → dist/
-grep -rEo "https?://[^\"' )]*" dist | grep -vE "localhost|www\.w3\.org/"   # должно быть пусто (XML-namespace w3.org допустимы)
+grep -rEo "https?://[^\"' )]*" dist | grep -vE "www\.w3\.org/"   # должно быть пусто (XML-namespace w3.org допустимы); та же проверка в frontend/Dockerfile, localhost тоже запрещён — в тексте UI пишите «localhost» без схемы
 ```
 
 Бэкенд для `npm run dev` поднимается локально. Нужны полное окружение (см. «Тесты») и веса в `MODELS_DIR`:
 
 ```bash
 cd backend && .venv/bin/python scripts/fetch_models.py --models-dir ../.models   # один раз
-MODELS_DIR=../.models DATA_DIR=/tmp/er-data .venv/bin/uvicorn app.main:app --reload --port 8000
+MODELS_DIR=$(realpath ../.models) DATA_DIR=/tmp/er-data .venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-Альтернатива: запустить бэкенд в Docker (`docker compose up backend`) и пробросить его порт 8000.
+Альтернатива — бэкенд из собранного образа, порт 8000 проброшен на хост (compose его не публикует):
+
+```bash
+docker run --rm -p 8000:8000 emotion-recognition/backend:cpu
+```
 
 ### Проверка офлайн-режима
 
@@ -156,7 +161,7 @@ MODELS_DIR=../.models DATA_DIR=/tmp/er-data .venv/bin/uvicorn app.main:app --rel
 ```bash
 docker run -d --name er-offline --network none emotion-recognition/backend:cpu
 docker exec er-offline python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/api/health').read().decode())"
-docker rm -f er-offline
+docker rm -fv er-offline   # -v: удалить и анонимный volume /data
 ```
 
 Полная проверка с отключением сети:
