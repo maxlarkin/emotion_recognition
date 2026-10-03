@@ -433,6 +433,22 @@ def _put(outq, item) -> None:
         pass
 
 
+def _apply_controls(engine: Any, slots: SourceSlots, removed: set[str], controls: deque, outq) -> None:
+    """Drop removed sources first, then apply queued fusion configs (a config for a re-registered
+    id belongs to the new source; one for a source that is gone is skipped, not resurrected)."""
+    for sid in removed:
+        engine.remove(sid)
+    while controls:
+        cfg = controls.popleft()
+        sid = cfg.get("source_id")
+        try:
+            if sid is not None and not slots.registered(sid):
+                continue
+            engine.set_fusion(float(cfg["w_face"]), float(cfg["w_audio"]), sid)
+        except Exception as exc:  # noqa: BLE001
+            _put(outq, ErrorResult(None, "bad_config", f"{type(exc).__name__}: {exc}"))
+
+
 def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s worker: %(message)s")
     try:
@@ -494,17 +510,7 @@ def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
     while not stop.is_set():
         slots.event.wait(0.1)
         frames, audio, removed = slots.take()
-        for sid in removed:  # first: a config for a re-registered id belongs to the new source
-            engine.remove(sid)
-        while controls:
-            cfg = controls.popleft()
-            sid = cfg.get("source_id")
-            try:
-                if sid is not None and not slots.registered(sid):
-                    continue  # the source is gone: do not resurrect its state
-                engine.set_fusion(float(cfg["w_face"]), float(cfg["w_audio"]), sid)
-            except Exception as exc:  # noqa: BLE001
-                _put(outq, ErrorResult(None, "bad_config", f"{type(exc).__name__}: {exc}"))
+        _apply_controls(engine, slots, removed, controls, outq)
         for res in engine.process_frames(frames):
             _put(outq, res)
         for res in engine.process_audio(audio):

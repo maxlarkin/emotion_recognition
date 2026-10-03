@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { LatencyWindow, type LatencyStats } from "./latency";
 import { nowEpochMs } from "./clock";
 import { MicCapture } from "./mic";
-import { containRect, drawOverlay } from "./overlay";
+import { containRect, drawOverlay, isStale } from "./overlay";
 import { faceText, fusedText, largestFace, voiceText, type MicState } from "./panel";
 import { encodeAudio, encodeFrame, parseServerMessage, type FrameResult } from "./protocol";
 
@@ -10,7 +10,6 @@ const FPS = 8;
 const MAX_SIDE = 640;
 const JPEG_QUALITY = 0.8;
 const MAX_BUFFERED_BYTES = 64 * 1024; // skip a capture while the socket still holds unsent data
-const STALE_MS = 1000; // no result for this long: clear the overlay
 const STATS_MS = 500;
 const RATE_WINDOW_MS = 5000;
 const SIZES_MAX = 512; // frame sizes kept while awaiting results
@@ -218,7 +217,7 @@ class LiveRun {
   }
 
   private checkStale(): void {
-    if (performance.now() - this.lastResultAt <= STALE_MS) return;
+    if (!isStale(this.lastResultAt, performance.now())) return;
     if (this.hasOverlay) this.clearOverlay();
     if (this.panelShown) {
       this.panelShown = false;

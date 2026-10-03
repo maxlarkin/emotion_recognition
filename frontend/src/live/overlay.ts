@@ -52,6 +52,13 @@ export function faceLabel(face: Pick<FaceResult, "fused_label" | "confidence">):
 }
 
 /** Clears the canvas (CSS-pixel coordinates, already scaled for devicePixelRatio) and draws faces. */
+/** No result for this long: the overlay (and panel) is stale and gets cleared. */
+export const STALE_MS = 1000;
+
+export function isStale(lastResultAt: number, now: number, staleMs: number = STALE_MS): boolean {
+  return now - lastResultAt > staleMs;
+}
+
 export function drawOverlay(
   ctx: CanvasRenderingContext2D,
   cssW: number,

@@ -172,6 +172,19 @@ def test_burst_answers_only_frames_the_worker_took(client, fake_worker):
     assert (second["frame_id"], second["capture_ts"]) == (6, 1006.0)
 
 
+def test_proc_ms_is_receipt_to_send(client, fake_worker):
+    fake_worker.auto = False  # the fake's own timings["total"] is 1.0 ms; proc_ms must not use it
+    with client() as c, ready(c).websocket_connect("/ws/live") as ws:
+        start(ws)
+        ws.send_bytes(encode_frame(1000.0, 1, JPEG))
+        wait_for(lambda: len(fake_worker.submitted) == 1)
+        time.sleep(0.15)
+        fake_worker.process()
+        msg = ws.receive_json()
+    assert msg["frame_id"] == 1
+    assert 150.0 <= msg["proc_ms"] < 5000.0
+
+
 def test_face_leaves(client, fake_worker):
     with client() as c, ready(c).websocket_connect("/ws/live") as ws:
         start(ws)

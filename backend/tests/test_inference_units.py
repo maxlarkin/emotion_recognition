@@ -389,3 +389,48 @@ def test_audio_backwards_ts_resets_but_jitter_does_not():
     assert _window_ends(eng2, "b", [100.0 + 0.5 * k for k in range(5)]) == []
     # ts jumps back by 50 s: restart, so 0.5 s more audio does not complete a window
     assert _window_ends(eng2, "b", [52.5]) == []
+
+
+class _RecordingEngine:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def remove(self, sid: str) -> None:
+        self.calls.append(("remove", sid))
+
+    def set_fusion(self, w_face: float, w_audio: float, sid=None) -> None:
+        FusionWeights(w_face, w_audio)  # validates like the real engine
+        self.calls.append(("fusion", sid, w_face, w_audio))
+
+
+def test_controls_skip_config_for_unregistered_source():
+    import queue
+    from collections import deque
+
+    slots = SourceSlots()
+    slots.register("live")
+    eng, outq = _RecordingEngine(), queue.Queue()
+    controls = deque([
+        {"w_face": 1.0, "w_audio": 0.0, "source_id": "gone"},
+        {"w_face": 0.5, "w_audio": 0.5, "source_id": "live"},
+        {"w_face": 0.6, "w_audio": 0.4, "source_id": None},
+    ])
+    worker_mod._apply_controls(eng, slots, set(), controls, outq)
+    assert eng.calls == [("fusion", "live", 0.5, 0.5), ("fusion", None, 0.6, 0.4)]
+    assert not controls and outq.empty()
+
+
+def test_controls_remove_before_config_and_report_bad_weights():
+    import queue
+    from collections import deque
+
+    slots = SourceSlots()
+    slots.register("s")
+    slots.unregister("s")
+    slots.register("s")  # re-registered: the config belongs to the new source
+    eng, outq = _RecordingEngine(), queue.Queue()
+    controls = deque([{"w_face": 0.2, "w_audio": 0.8, "source_id": "s"}, {"w_face": -1.0, "w_audio": 0.0, "source_id": None}])
+    worker_mod._apply_controls(eng, slots, {"s"}, controls, outq)
+    assert eng.calls == [("remove", "s"), ("fusion", "s", 0.2, 0.8)]
+    err = outq.get_nowait()
+    assert (err.source_id, err.kind) == (None, "bad_config")

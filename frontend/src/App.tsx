@@ -58,7 +58,7 @@ export default function App() {
   );
 }
 
-function HealthView({ health, stale }: { health: Health; stale: boolean }) {
+export function HealthView({ health, stale }: { health: Health; stale: boolean }) {
   const missing = (Object.keys(MODEL_LABELS) as ModelKey[]).filter((k) => !health.models[k]);
   return (
     <>
