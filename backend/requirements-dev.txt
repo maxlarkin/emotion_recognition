@@ -4,5 +4,6 @@
 -c requirements.txt
 fastapi
 numpy
+opencv-python-headless  # JPEG decode in sources.webcam (tests of /ws/live)
 httpx==0.28.1
 pytest==9.1.1

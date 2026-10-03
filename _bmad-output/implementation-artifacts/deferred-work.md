@@ -18,3 +18,15 @@
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/1-repository-skeleton-and-docker-compose.md`
   summary: "Exactly one backend per compose command" is verified manually only.
   evidence: add a script asserting `docker compose config --services` = {backend, frontend} and with `--profile gpu` = {backend-gpu, frontend} once a CI/check harness exists.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/3-live-webcam-analysis-with-overlay-and-latency-readout.md`
+  summary: After WorkerDied the InferenceHub stays failed until the backend restarts; /api/health still reports ok, so a dead or still-loading worker is invisible until the user presses Start.
+  evidence: inference_hub._drain sets FAILED and never restarts; health checks only model files. Restart policy or a hub-state signal (health contract change via bmad-spec) belongs to story 1.9 hardening.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/3-live-webcam-analysis-with-overlay-and-latency-readout.md`
+  summary: frame_result proc_ms is asserted only as >= 0; no test ties it to receipt-to-send server time.
+  evidence: test_ws_live.test_frame_with_face; a delayed fake-worker emit with proc_ms >= delay would pin it. Diagnostic field, CAP-1 uses client latency.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/3-live-webcam-analysis-with-overlay-and-latency-readout.md`
+  summary: Client overlay clearing (faces=[] and the 1 s stale rule) has no automated test; only the manual browser check covers it.
+  evidence: overlay.test.ts covers geometry and labels only; a drawOverlay test with a stub ctx plus a pure isStale() helper would close it.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/3-live-webcam-analysis-with-overlay-and-latency-readout.md`
+  summary: The AGENTS.md offline-URL grep for frontend/dist excludes `localhost`, but the frontend Dockerfile guard does not, so a local check passed while the image build failed on UI text containing http://localhost.
+  evidence: AGENTS.md Фронтенд section vs frontend/Dockerfile RUN npm run build guard; align AGENTS.md with the Dockerfile guard (agent-context edit).

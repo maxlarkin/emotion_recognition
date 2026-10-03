@@ -49,6 +49,7 @@ RUN python scripts/fetch_models.py --models-dir /models \
 # Application code.
 COPY app/ app/
 COPY inference/ inference/
+COPY sources/ sources/
 COPY bench/ bench/
 COPY eval/ eval/
 COPY scripts/ scripts/

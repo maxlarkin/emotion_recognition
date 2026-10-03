@@ -128,12 +128,3 @@ def test_directory_in_place_of_file_counts_as_missing(make_client, models_dir: P
     assert body["models"]["ser"] is False
     assert body["status"] == "degraded"
 
-
-def test_ws_live_stub_accepts_and_closes(make_client):
-    from starlette.websockets import WebSocketDisconnect
-
-    with make_client("cpu") as client:
-        with client.websocket_connect("/ws/live") as ws:
-            with pytest.raises(WebSocketDisconnect) as exc:
-                ws.receive_text()
-    assert exc.value.code == 1000

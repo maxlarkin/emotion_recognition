@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchHealth, type Health, type ModelKey } from "./api";
+import LiveView from "./live/LiveView";
 
 const MODEL_LABELS: Record<ModelKey, string> = {
   yunet: "Детектор лиц (YuNet)",
@@ -44,12 +45,15 @@ export default function App() {
   return (
     <main className="page">
       <h1>Распознавание эмоций</h1>
-      <section className="card" aria-live="polite">
-        <h2>Состояние системы</h2>
-        {error && !health && <p className="error">Сервер недоступен ({error}). Повторная попытка…</p>}
-        {!error && !health && <p>Загрузка…</p>}
-        {health && <HealthView health={health} stale={error !== null} />}
-      </section>
+      <div className="layout">
+        <LiveView />
+        <section className="card health" aria-live="polite">
+          <h2>Состояние системы</h2>
+          {error && !health && <p className="error">Сервер недоступен ({error}). Повторная попытка…</p>}
+          {!error && !health && <p>Загрузка…</p>}
+          {health && <HealthView health={health} stale={error !== null} />}
+        </section>
+      </div>
     </main>
   );
 }
