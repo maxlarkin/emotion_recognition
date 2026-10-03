@@ -60,7 +60,7 @@ Deliver within 1.5 months a working, fully offline Docker prototype that recogni
   - IoU tracker for stable track ids.
   - Per-track EMA on facial probabilities (α 0.4, configurable).
   - Audio is PCM16 mono 16 kHz in 500 ms chunks. SER runs on a 3 s window with a 1 s hop, only if VAD marks speech in ≥ 50% of the window.
-  - Fusion is `w_face·p_face + w_audio·p_audio` (defaults 0.7 / 0.3). `w_audio` is 0 without speech. Face-only classes use the face probability. Renormalise after fusion.
+  - Fusion is `renormalise(w_face·p_face + w_audio·p_audio)` over all 7 keys (defaults 0.7 / 0.3). Audio is 0 on disgust/fear/surprise, so those get only the weighted face term. Without speech `w_audio` is 0 and fused equals face. The wire `audio.probs` always carries all 7 keys.
 - **Single inference worker process** holds all models and runs outside the FastAPI event loop. Every source (webcam WS, RTSP, file) feeds it through the "source → queue → worker → results" seam. It keeps a per-source latest-frame slot of size 1 that drops stale frames, plus bounded FIFOs for audio and file jobs, and batches faces across sources. Models load once.
 - **Live input:** the client sends JPEG at 5–10 fps (default 8), longest side ≤ 640 px, quality ~0.8. The server answers only the latest frame; dropped frames get no reply.
 - **RTSP ingest:**
