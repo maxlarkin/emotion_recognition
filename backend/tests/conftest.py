@@ -11,7 +11,7 @@ from typing import Callable, Optional
 import numpy as np
 import pytest
 
-from inference.types import EMOTIONS, FaceResult, FrameResult
+from inference.types import EMOTIONS, AudioResult, FaceResult, FrameResult
 
 
 def one_face(image: np.ndarray) -> list[FaceResult]:
@@ -27,6 +27,10 @@ class FakeWorker:
 
     auto=True answers every frame at once; auto=False keeps a size-1 slot per source (a newer
     frame overwrites the older one, like the real worker) until `process()` is called.
+    `audio[sid]` (an AudioResult) is attached to that source's frames under the real worker's
+    media-time rule (0 <= frame ts - window_end_ts <= 2 s) and fused like the real engine, with
+    the weights set per source by `set_fusion` (default 0.7 / 0.3). `fusion_queue_full` makes
+    `set_fusion` raise queue.Full like a full inbound queue.
     """
 
     def __init__(self) -> None:
@@ -38,6 +42,11 @@ class FakeWorker:
         self.registered: list[str] = []
         self.unregistered: list[str] = []
         self.submitted: list[tuple[str, int, float, tuple]] = []  # source, frame_id, ts, shape
+        self.audio_submitted: list[tuple[str, int, float]] = []  # source, PCM byte count, ts (s)
+        self.audio: dict[str, AudioResult] = {}
+        self.fusion: dict[Optional[str], tuple[float, float]] = {}  # source_id (None = default) -> weights
+        self.fusion_calls: list[tuple[float, float, Optional[str]]] = []
+        self.fusion_queue_full = False
         self.slots: dict[str, tuple] = {}
         self.out: queue.Queue = queue.Queue()
         self.dead = False
@@ -86,9 +95,41 @@ class FakeWorker:
                 self.slots[sid] = item
         return True
 
+    def submit_audio(self, sid: str, samples, ts=None) -> bool:
+        if sid not in self.sources:
+            raise KeyError(sid)
+        if self.dead:
+            raise RuntimeError("inference worker is not running")
+        with self.lock:
+            self.audio_submitted.append((sid, len(samples), ts))
+        return True
+
+    def set_fusion(self, w_face: float, w_audio: float, source_id: Optional[str] = None) -> None:
+        if self.dead:
+            raise RuntimeError("inference worker is not running")
+        if source_id is not None and source_id not in self.sources:
+            raise KeyError(source_id)
+        if self.fusion_queue_full:
+            raise queue.Full
+        with self.lock:
+            self.fusion_calls.append((w_face, w_audio, source_id))
+            self.fusion[source_id] = (w_face, w_audio)
+
     def _emit(self, item: tuple) -> None:
+        from inference.fusion import FusionWeights, fuse
+        from inference.types import from_dict, to_dict, top_label
+
         sid, frame_id, ts, image = item
-        self.out.put(FrameResult(sid, frame_id, ts, self.faces_fn(image), None, time.time(), {"total": 1.0}))
+        audio = self.audio.get(sid)
+        if audio is not None and not 0.0 <= ts - audio.window_end_ts <= 2.0:
+            audio = None  # media-time rule of Engine.audio_for (audio_max_age_s = 2)
+        weights = FusionWeights(*self.fusion.get(sid, self.fusion.get(None, (0.7, 0.3))))
+        vec = from_dict(audio.probs) if audio is not None and audio.probs is not None else None
+        faces = []
+        for f in self.faces_fn(image):
+            fused = fuse(from_dict(f.face), vec, weights)
+            faces.append(FaceResult(f.track_id, f.box, f.face, f.face_label, to_dict(fused), top_label(fused), float(fused.max())))
+        self.out.put(FrameResult(sid, frame_id, ts, faces, audio, time.time(), {"total": 1.0}))
 
     def process(self) -> None:
         with self.lock:

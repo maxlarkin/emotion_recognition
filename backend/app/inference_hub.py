@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import queue
 import threading
 import uuid
 from dataclasses import dataclass
@@ -195,5 +196,34 @@ class InferenceHub:
             raise HubUnavailable(self.state)
         try:
             return bool(worker.submit_frame(source_id, bgr, frame_id=frame_id, ts=ts))
+        except (RuntimeError, ValueError, AttributeError, OSError) as exc:  # worker not running / queue closed
+            raise HubUnavailable(FAILED) from exc
+
+    def submit_audio(self, source_id: str, pcm: bytes, ts: float) -> bool:
+        """Thread-safe. PCM16 LE mono 16 kHz, `ts` in seconds (first sample, same clock as frames).
+
+        False if the chunk was dropped (inbound queue full). Raises HubUnavailable if the worker is gone.
+        """
+        worker = self._worker
+        if worker is None:
+            raise HubUnavailable(self.state)
+        try:
+            return bool(worker.submit_audio(source_id, pcm, ts=ts))
+        except (RuntimeError, ValueError, AttributeError, OSError) as exc:  # worker not running / queue closed
+            raise HubUnavailable(FAILED) from exc
+
+    def set_fusion(self, source_id: str, w_face: float, w_audio: float) -> bool:
+        """Fusion weights for this source only (validated by the caller). May block briefly.
+
+        False if the worker's inbound queue stayed full. Raises HubUnavailable if the worker is gone.
+        """
+        worker = self._worker
+        if worker is None:
+            raise HubUnavailable(self.state)
+        try:
+            worker.set_fusion(w_face, w_audio, source_id=source_id)
+            return True
+        except queue.Full:
+            return False
         except (RuntimeError, ValueError, AttributeError, OSError) as exc:  # worker not running / queue closed
             raise HubUnavailable(FAILED) from exc

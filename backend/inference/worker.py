@@ -50,6 +50,9 @@ Result = Union[FrameResult, AudioResult, ErrorResult]
 
 SER_MAX_BATCH = 8  # speech windows per GigaAM forward pass
 AUDIO_HISTORY = 16  # recent windows kept per source for media-time matching with frames
+# A chunk starting this far (s) from where the previous one ended (a mic off->on gap, or ts going
+# backwards) restarts the source's VAD stream and speech window: no stale audio in the next window.
+AUDIO_GAP_S = 0.25
 
 
 @dataclass
@@ -175,6 +178,10 @@ class SourceSlots:
             self.removed.add(source_id)
         self.event.set()
 
+    def registered(self, source_id: str) -> bool:
+        with self.lock:
+            return source_id in self.frames
+
     def put_frame(self, frame: VideoFrame) -> bool:
         with self.lock:
             if frame.source_id not in self.frames:
@@ -224,6 +231,15 @@ class _SourceState:
         self.vad = VadStream()
         self.window = SpeechWindow()
         self.audio_history: deque[AudioResult] = deque(maxlen=AUDIO_HISTORY)  # by window_end_ts
+        self.weights: Optional[Any] = None  # FusionWeights of this source; None -> Engine.weights
+        self.audio_next_ts: Optional[float] = None  # media time where the previous chunk ended
+
+    def reset_audio(self) -> None:
+        from inference.ser import SpeechWindow
+        from inference.vad import VadStream
+
+        self.vad = VadStream()
+        self.window = SpeechWindow()
 
 
 class Engine:
@@ -255,10 +271,15 @@ class Engine:
     def remove(self, source_id: str) -> None:
         self.sources.pop(source_id, None)
 
-    def set_fusion(self, w_face: float, w_audio: float) -> None:
+    def set_fusion(self, w_face: float, w_audio: float, source_id: Optional[str] = None) -> None:
+        """Without source_id: the default weights (sources without their own). With it: that source only."""
         from inference.fusion import FusionWeights
 
-        self.weights = FusionWeights(w_face, w_audio)
+        weights = FusionWeights(w_face, w_audio)  # validates
+        if source_id is None:
+            self.weights = weights
+        else:
+            self.state(source_id).weights = weights
 
     # ---- audio
 
@@ -268,6 +289,9 @@ class Engine:
         st = self.state(sid)
         out = []
         for c in chunks:
+            if st.audio_next_ts is not None and abs(c.ts - st.audio_next_ts) > AUDIO_GAP_S:
+                st.reset_audio()  # discontinuity: drop pre-gap samples and the partial window
+            st.audio_next_ts = c.ts + len(c.samples) / SAMPLE_RATE
             pend = st.vad.pending.shape[0]
             samples = np.asarray(c.samples, dtype=np.int16).astype(np.float32) / 32768.0
             for i, (chunk, prob) in enumerate(self.vad.feed(st.vad, samples)):
@@ -324,6 +348,8 @@ class Engine:
         """Newest window with 0 <= frame_ts - window_end_ts <= audio_max_age_s (media time)."""
         best = None
         for r in st.audio_history:
+            if r.speech and r.probs is None:
+                continue  # skipped backlog window (SER ran only on a newer one): nothing to show or fuse
             age = frame_ts - r.window_end_ts
             if 0.0 <= age <= self.config.audio_max_age_s and (best is None or r.window_end_ts > best.window_end_ts):
                 best = r
@@ -372,7 +398,7 @@ class Engine:
             faces = []
             for k, (box, tid) in enumerate(zip(boxes, ids)):
                 face = st.ema.update(tid, probs[first + k])
-                fused = fuse(face, audio_vec, self.weights)
+                fused = fuse(face, audio_vec, st.weights if st.weights is not None else self.weights)
                 label = top_label(fused)
                 faces.append(
                     FaceResult(
@@ -468,14 +494,17 @@ def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
     while not stop.is_set():
         slots.event.wait(0.1)
         frames, audio, removed = slots.take()
+        for sid in removed:  # first: a config for a re-registered id belongs to the new source
+            engine.remove(sid)
         while controls:
             cfg = controls.popleft()
+            sid = cfg.get("source_id")
             try:
-                engine.set_fusion(float(cfg["w_face"]), float(cfg["w_audio"]))
+                if sid is not None and not slots.registered(sid):
+                    continue  # the source is gone: do not resurrect its state
+                engine.set_fusion(float(cfg["w_face"]), float(cfg["w_audio"]), sid)
             except Exception as exc:  # noqa: BLE001
                 _put(outq, ErrorResult(None, "bad_config", f"{type(exc).__name__}: {exc}"))
-        for sid in removed:
-            engine.remove(sid)
         for res in engine.process_frames(frames):
             _put(outq, res)
         for res in engine.process_audio(audio):
@@ -645,9 +674,15 @@ class InferenceWorker:
         except queue.Full:
             return False
 
-    def set_fusion(self, w_face: float, w_audio: float) -> None:
+    def set_fusion(self, w_face: float, w_audio: float, source_id: Optional[str] = None) -> None:
+        """Fusion weights: the default for every source, or only `source_id`'s when given.
+
+        Invalid weights come back as ErrorResult(None, "bad_config"); the weights stay unchanged.
+        """
         self._require_running()
-        self._inq.put(("config", {"w_face": w_face, "w_audio": w_audio}), timeout=5.0)
+        if source_id is not None:
+            self._check(source_id)
+        self._inq.put(("config", {"w_face": w_face, "w_audio": w_audio, "source_id": source_id}), timeout=5.0)
 
     def results(self, timeout: float = 0.0, max_items: int = 10_000) -> list[Result]:
         """Drain available results; waits up to `timeout` seconds for the first one.

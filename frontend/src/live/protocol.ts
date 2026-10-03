@@ -6,6 +6,9 @@ export type Probs = Record<Emotion, number>;
 
 export const VIDEO_FRAME = 0x01;
 export const HEADER_BYTES = 13;
+export const AUDIO_CHUNK = 0x02;
+export const AUDIO_HEADER_BYTES = 9;
+export const AUDIO_RATE = 16000;
 
 /** 0x01 | f64 capture_ts (ms) | u32 frame_id */
 export function encodeFrameHeader(captureTs: number, frameId: number): Uint8Array<ArrayBuffer> {
@@ -26,6 +29,24 @@ export function encodeFrame(captureTs: number, frameId: number, jpeg: ArrayBuffe
   return out;
 }
 
+/** 0x02 | f64 capture_ts (ms, first sample) | PCM16 LE mono 16 kHz */
+export function encodeAudio(captureTs: number, pcm: Int16Array): Uint8Array<ArrayBuffer> {
+  const buf = new ArrayBuffer(AUDIO_HEADER_BYTES + pcm.length * 2);
+  const view = new DataView(buf);
+  view.setUint8(0, AUDIO_CHUNK);
+  view.setFloat64(1, captureTs, true);
+  for (let i = 0; i < pcm.length; i++) view.setInt16(AUDIO_HEADER_BYTES + i * 2, pcm[i], true);
+  return new Uint8Array(buf);
+}
+
+/** Vocal emotion of the window attached to a frame. Silence: speech false, probs all 0, label null. */
+export interface AudioBlock {
+  speech: boolean;
+  probs: Probs;
+  label: Emotion | null;
+  window_end_ts: number;
+}
+
 export interface FaceResult {
   track_id: number;
   box: [number, number, number, number]; // x, y, w, h in pixels of the sent JPEG
@@ -42,7 +63,7 @@ export interface FrameResult {
   capture_ts: number;
   proc_ms: number;
   faces: FaceResult[];
-  audio: unknown | null;
+  audio: AudioBlock | null; // null: no audio window attached (no mic, muted, or > 2 s old)
 }
 
 export type ServerMessage =
@@ -70,6 +91,23 @@ function isFace(v: unknown): v is FaceResult {
   );
 }
 
+/** The `audio` block of a frame_result; null if absent or malformed (the frame itself is still used). */
+export function parseAudio(v: unknown): AudioBlock | null {
+  if (!isObj(v) || typeof v.speech !== "boolean" || !isObj(v.probs)) return null;
+  if (typeof v.window_end_ts !== "number" || !Number.isFinite(v.window_end_ts)) return null;
+  const raw = v.probs;
+  if (!EMOTIONS.every((k) => typeof raw[k] === "number" && Number.isFinite(raw[k]))) return null;
+  const label = v.label === null || v.label === undefined ? null : isEmotion(v.label) ? v.label : undefined;
+  if (label === undefined || (v.speech && label === null)) return null;
+  const probs = Object.fromEntries(EMOTIONS.map((k) => [k, raw[k] as number])) as Probs;
+  return {
+    speech: v.speech,
+    probs,
+    label: v.speech ? label : null,
+    window_end_ts: v.window_end_ts,
+  };
+}
+
 /** Parse one text message from the server; null if it is not a known, well-formed message. */
 export function parseServerMessage(text: string): ServerMessage | null {
   let obj: unknown;
@@ -93,7 +131,7 @@ export function parseServerMessage(text: string): ServerMessage | null {
       ) {
         return null;
       }
-      return obj as unknown as FrameResult;
+      return { ...(obj as unknown as FrameResult), audio: parseAudio(obj.audio) };
     default:
       return null;
   }

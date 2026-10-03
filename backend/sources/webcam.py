@@ -47,6 +47,11 @@ def encode_frame(capture_ts: float, frame_id: int, jpeg: bytes) -> bytes:
     return VIDEO_HEADER.pack(VIDEO_TYPE, float(capture_ts), int(frame_id)) + bytes(jpeg)
 
 
+def encode_audio(capture_ts: float, pcm: bytes) -> bytes:
+    """Client-side encoding (tests): capture_ts in ms of the first sample, PCM16 LE mono 16 kHz."""
+    return AUDIO_HEADER.pack(AUDIO_TYPE, float(capture_ts)) + bytes(pcm)
+
+
 def parse_message(data: bytes) -> Union[WebcamFrame, AudioPacket]:
     if not data:
         raise BadMessage("empty", "Пустое сообщение")
@@ -62,7 +67,14 @@ def parse_message(data: bytes) -> Union[WebcamFrame, AudioPacket]:
         if len(data) < AUDIO_HEADER.size:
             raise BadMessage("short", f"Некорректный аудиофрагмент: сообщение короче {AUDIO_HEADER.size} байт")
         _, ts = AUDIO_HEADER.unpack_from(data)
-        return AudioPacket(ts, bytes(data[AUDIO_HEADER.size :]))
+        if not math.isfinite(ts):
+            raise BadMessage("bad_ts", "Некорректный аудиофрагмент: неверная метка времени")
+        pcm = bytes(data[AUDIO_HEADER.size :])
+        if not pcm:
+            raise BadMessage("bad_pcm", "Некорректный аудиофрагмент: нет отсчётов PCM")
+        if len(pcm) % 2:
+            raise BadMessage("bad_pcm", "Некорректный аудиофрагмент: нечётное число байт PCM16")
+        return AudioPacket(ts, pcm)
     raise BadMessage("unknown_type", f"Неизвестный тип сообщения: 0x{kind:02x}")
 
 

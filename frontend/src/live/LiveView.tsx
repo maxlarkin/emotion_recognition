@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { LatencyWindow, type LatencyStats } from "./latency";
+import { nowEpochMs } from "./clock";
+import { MicCapture } from "./mic";
 import { containRect, drawOverlay } from "./overlay";
-import { encodeFrame, parseServerMessage, type FrameResult } from "./protocol";
+import { faceText, fusedText, largestFace, voiceText, type MicState } from "./panel";
+import { encodeAudio, encodeFrame, parseServerMessage, type FrameResult } from "./protocol";
 
 const FPS = 8;
 const MAX_SIDE = 640;
@@ -12,6 +15,7 @@ const STATS_MS = 500;
 const RATE_WINDOW_MS = 5000;
 const SIZES_MAX = 512; // frame sizes kept while awaiting results
 const NOTICE_MS = 4000;
+const MAX_AUDIO_BUFFERED_BYTES = 512 * 1024; // the socket is badly backed up: drop audio chunks
 
 type Phase = "idle" | "starting" | "running";
 
@@ -20,8 +24,6 @@ interface Readout extends LatencyStats {
 }
 
 const EMPTY_READOUT: Readout = { count: 0, p50: null, p95: null, rate: 0 };
-
-const nowEpochMs = () => performance.timeOrigin + performance.now();
 
 function cameraError(e: unknown): string {
   const name = e instanceof DOMException || e instanceof Error ? e.name : "";
@@ -45,6 +47,8 @@ interface Callbacks {
   onFatal: (message: string) => void;
   onNotice: (message: string) => void;
   onStats: (r: Readout) => void;
+  onResult: (res: FrameResult | null) => void; // latest result for the panel; null when stale
+  onMic: (state: MicState) => void;
 }
 
 /** One live session: socket, capture loop, overlay and latency statistics. */
@@ -64,12 +68,16 @@ class LiveRun {
   private captureCanvas = document.createElement("canvas");
   private timers: number[] = [];
   private raf = 0;
+  private panelShown = false;
+  private mic: MicCapture | null = null;
+  private micOpening = false;
 
   constructor(
     private readonly stream: MediaStream,
     private readonly video: HTMLVideoElement,
     private readonly overlay: HTMLCanvasElement,
     private readonly cb: Callbacks,
+    private micWanted: boolean,
   ) {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     for (const track of stream.getVideoTracks()) {
@@ -102,6 +110,8 @@ class LiveRun {
         window.setInterval(() => this.checkStale(), 200),
         window.setInterval(() => this.publishStats(), STATS_MS),
       );
+      this.cb.onMic(this.micWanted ? "starting" : "off");
+      if (this.micWanted) void this.openMic();
     } else if (msg.type === "error") {
       this.lastServerError = msg.message;
       if (this.running) this.cb.onNotice(msg.message);
@@ -115,6 +125,8 @@ class LiveRun {
         return;
       }
       this.latest = { res: msg, ...size };
+      this.panelShown = true;
+      this.cb.onResult(msg);
       this.lastResultAt = performance.now();
       this.resultTimes.push(this.lastResultAt);
       if (!this.raf) this.raf = requestAnimationFrame(() => this.render());
@@ -206,7 +218,66 @@ class LiveRun {
   }
 
   private checkStale(): void {
-    if (this.hasOverlay && performance.now() - this.lastResultAt > STALE_MS) this.clearOverlay();
+    if (performance.now() - this.lastResultAt <= STALE_MS) return;
+    if (this.hasOverlay) this.clearOverlay();
+    if (this.panelShown) {
+      this.panelShown = false;
+      this.cb.onResult(null);
+    }
+  }
+
+  // ---- microphone (optional: the session runs video-only without it)
+
+  /** The mic toggle. Off closes the mic (device released, nothing queued is sent); on opens a new one. */
+  setMicWanted(on: boolean): void {
+    this.micWanted = on;
+    if (this.stopped || !this.running) return;
+    if (on) {
+      void this.openMic(); // no-op while one is open or opening
+    } else {
+      this.mic?.close();
+      this.mic = null;
+      if (!this.micOpening) this.cb.onMic("off");
+    }
+  }
+
+  private async openMic(): Promise<void> {
+    if (this.micOpening || this.mic || this.stopped) return;
+    this.micOpening = true;
+    this.cb.onMic("starting");
+    try {
+      const mic = await MicCapture.open(
+        (pcm, captureTs) => {
+          if (this.mic === mic) this.sendAudio(pcm, captureTs); // never from a closed capture
+        },
+        () => this.onMicEnded(),
+      );
+      if (this.stopped || !this.micWanted) {
+        mic.close(); // stopped or switched off while it was opening
+        if (!this.stopped) this.cb.onMic("off");
+        return;
+      }
+      this.mic = mic;
+      this.cb.onMic("on");
+    } catch {
+      // denied, no device, or no AudioWorklet: the session continues with video only
+      if (!this.stopped) this.cb.onMic(this.micWanted ? "unavailable" : "off");
+    } finally {
+      this.micOpening = false;
+    }
+  }
+
+  private onMicEnded(): void {
+    this.mic?.close();
+    this.mic = null;
+    if (!this.stopped) this.cb.onMic(this.micWanted ? "unavailable" : "off");
+  }
+
+  private sendAudio(pcm: Int16Array, captureTs: number): void {
+    const { ws } = this;
+    if (this.stopped || !this.running || !this.micWanted || ws.readyState !== WebSocket.OPEN) return;
+    if (ws.bufferedAmount > MAX_AUDIO_BUFFERED_BYTES) return;
+    ws.send(encodeAudio(captureTs, pcm));
   }
 
   private publishStats(): void {
@@ -229,6 +300,8 @@ class LiveRun {
       this.ws.close();
     }
     this.stream.getTracks().forEach((t) => t.stop());
+    this.mic?.close();
+    this.mic = null;
     this.clearOverlay();
   }
 }
@@ -247,6 +320,10 @@ export default function LiveView() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [readout, setReadout] = useState<Readout>(EMPTY_READOUT);
+  const [micWanted, setMicWanted] = useState(true);
+  const micWantedRef = useRef(true);
+  const [micState, setMicState] = useState<MicState>("off");
+  const [result, setResult] = useState<FrameResult | null>(null);
 
   useEffect(
     () => () => {
@@ -263,7 +340,15 @@ export default function LiveView() {
     runRef.current?.stop();
     runRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    setResult(null);
     setPhase("idle");
+  };
+
+  const toggleMic = () => {
+    const on = !micWantedRef.current;
+    micWantedRef.current = on;
+    setMicWanted(on);
+    runRef.current?.setMicWanted(on);
   };
 
   const start = async () => {
@@ -273,6 +358,7 @@ export default function LiveView() {
     setError(null);
     setNotice(null);
     setReadout(EMPTY_READOUT);
+    setResult(null);
     if (!navigator.mediaDevices?.getUserMedia) {
       setError("Браузер не даёт доступа к камере. Откройте приложение по адресу localhost (без HTTPS камера доступна только там).");
       return;
@@ -318,11 +404,20 @@ export default function LiveView() {
         noticeTimerRef.current = window.setTimeout(() => setNotice(null), NOTICE_MS);
       },
       onStats: setReadout,
-    });
+      onResult: (res) => {
+        if (runRef.current === run) setResult(res);
+      },
+      onMic: (state) => {
+        if (runRef.current === run) setMicState(state);
+      },
+    }, micWantedRef.current);
     runRef.current = run;
   };
 
   const p95Class = readout.p95 === null ? "" : readout.p95 < 1000 ? "ok" : "error";
+  const running = phase === "running";
+  const face = result ? largestFace(result.faces) : null;
+  const voice = running ? voiceText(micState, result?.audio ?? null) : micWanted ? "—" : "микрофон выключен";
 
   return (
     <section className="card live" aria-labelledby="live-title">
@@ -335,6 +430,15 @@ export default function LiveView() {
           <button type="button" className="secondary" onClick={stop} disabled={phase === "idle"}>
             Стоп
           </button>
+          <button
+            type="button"
+            className={micWanted ? "secondary" : "secondary off"}
+            onClick={toggleMic}
+            aria-pressed={micWanted}
+            title={micWanted ? "Выключить микрофон" : "Включить микрофон"}
+          >
+            {micWanted ? "Микрофон вкл" : "Микрофон выкл"}
+          </button>
         </div>
       </div>
       <div className="stage">
@@ -342,6 +446,20 @@ export default function LiveView() {
         <canvas ref={canvasRef} aria-hidden="true" />
         {phase === "idle" && <p className="stage-hint">Нажмите «Старт», чтобы включить камеру и начать анализ</p>}
       </div>
+      <dl className="readout panel" aria-live="off">
+        <div>
+          <dt>Голос</dt>
+          <dd>{voice}</dd>
+        </div>
+        <div>
+          <dt>Лицо</dt>
+          <dd>{running && result ? faceText(face) : "—"}</dd>
+        </div>
+        <div>
+          <dt>Итог</dt>
+          <dd>{running && result ? fusedText(face) : "—"}</dd>
+        </div>
+      </dl>
       <dl className="readout" aria-live="off">
         <div>
           <dt>Задержка p50</dt>
@@ -361,7 +479,9 @@ export default function LiveView() {
         </div>
       </dl>
       <p className="hint">
-        Задержка — от захвата кадра до отрисовки рамки, за последние 60 секунд. Цель: p95 меньше 1000 мс.
+        «Лицо» и «Итог» — для самого крупного лица в кадре. «Итог» объединяет лицо (70%) и голос (30%), пока
+        звучит речь; без речи он совпадает с «Лицо». Задержка — от захвата кадра до отрисовки рамки, за последние
+        60 секунд. Цель: p95 меньше 1000 мс.
       </p>
       {error && (
         <p className="error" role="alert">

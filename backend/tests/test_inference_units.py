@@ -284,3 +284,108 @@ def test_violations_each_condition():
     assert any("no face" in v for v in violations(_report(faces_in_frame=0, device="cpu")))
     # GPU-only gates do not apply on the CPU
     assert violations(_report(device="cpu", stages={"detect_plus_fer": {"p95": 500.0}}, peak_vram_mb=4000.0)) == []
+
+
+# ------------------------------------------------------------------------------ per-source fusion (stub models)
+
+
+class _StubDetector:
+    def detect(self, image):
+        return [(10, 10, 50, 50)]
+
+
+class _StubFER:
+    FACE = np.array([0.05, 0.0, 0.05, 0.6, 0.1, 0.0, 0.2])
+
+    def predict(self, crops):
+        return np.stack([self.FACE for _ in crops]) if crops else np.zeros((0, 7))
+
+
+def _stub_engine() -> "worker_mod.Engine":
+    from inference.fusion import FusionWeights
+
+    eng = worker_mod.Engine.__new__(worker_mod.Engine)  # no model files: detector / FER stubbed
+    eng.device, eng.config = "cpu", WorkerConfig()
+    eng.weights = FusionWeights(0.7, 0.3)
+    eng.detector, eng.fer, eng.sources = _StubDetector(), _StubFER(), {}
+    return eng
+
+
+def _speech(sid: str, end_ts: float, probs=None, skipped: bool = False):
+    from inference.types import AudioResult
+
+    p = None if probs is None else dict(zip(EMOTIONS, probs))
+    return AudioResult(sid, True, p, None if p is None else "anger", end_ts, 0.9, skipped=skipped)
+
+
+def test_engine_fusion_weights_are_per_source():
+    eng = _stub_engine()
+    img = np.zeros((80, 80, 3), np.uint8)
+    audio = [0.8, 0.0, 0.0, 0.1, 0.05, 0.0, 0.05]
+    for sid in ("a", "b"):
+        eng.state(sid).audio_history.append(_speech(sid, 10.0, audio))
+    eng.set_fusion(1.0, 0.0, "a")
+    out = {r.source_id: r for r in eng.process_frames([VideoFrame(s, 1, 10.5, img) for s in ("a", "b")])}
+    fa, fb = out["a"].faces[0], out["b"].faces[0]
+    assert fa.fused == fa.face  # face only for "a"
+    expected = fuse(_StubFER.FACE, np.array(audio), FusionWeights(0.7, 0.3))
+    np.testing.assert_allclose([fb.fused[k] for k in EMOTIONS], expected)  # "b" keeps the defaults
+    # the global call still sets the default for sources without their own weights
+    eng.set_fusion(0.5, 0.5)
+    out = {r.source_id: r for r in eng.process_frames([VideoFrame(s, 2, 10.6, img) for s in ("a", "b")])}
+    assert out["a"].faces[0].fused == out["a"].faces[0].face
+    expected = fuse(_StubFER.FACE, np.array(audio), FusionWeights(0.5, 0.5))
+    np.testing.assert_allclose([out["b"].faces[0].fused[k] for k in EMOTIONS], expected)
+    with pytest.raises(ValueError):
+        eng.set_fusion(0.0, 0.0, "a")
+    assert eng.state("a").weights == FusionWeights(1.0, 0.0)  # unchanged
+
+
+def test_engine_skips_backlog_window_without_probs():
+    eng = _stub_engine()
+    st = eng.state("s")
+    st.audio_history.append(_speech("s", 10.0, skipped=True))  # SER ran only on a newer window
+    assert eng.audio_for(st, 10.5) is None
+    st.audio_history.append(_speech("s", 9.0, [1, 0, 0, 0, 0, 0, 0]))
+    assert eng.audio_for(st, 10.5).window_end_ts == 9.0
+
+
+class _StubVAD:
+    """Silero VAD stand-in: same 512-sample chunking and leftover handling, every chunk is speech."""
+
+    def feed(self, stream, samples):
+        from inference.vad import CHUNK
+
+        buf = np.concatenate([stream.pending, samples.astype(np.float32)])
+        n = buf.shape[0] // CHUNK
+        stream.pending = buf[n * CHUNK :].copy()
+        return [(buf[i * CHUNK : (i + 1) * CHUNK], 1.0) for i in range(n)]
+
+
+def _window_ends(eng, sid: str, starts: list[float], seconds: float = 0.5) -> list[float]:
+    n = int(seconds * 16000)
+    chunks = [AudioChunk(sid, ts, np.full(n, 1000, np.int16)) for ts in starts]
+    return [w.end_ts for _, w in eng._windows(sid, chunks)]
+
+
+def test_audio_gap_resets_vad_and_window():
+    eng = _stub_engine()
+    eng.vad = _StubVAD()
+    # 2.5 s of continuous audio: no 3 s window yet
+    assert _window_ends(eng, "s", [0.5 * k for k in range(5)]) == []
+    # mic off -> on: the next chunk starts 7.5 s later. Without a reset the first window would end
+    # at ~10.5 s, mixing 2.5 s of pre-gap audio; with it, the window needs 3 s of new audio.
+    ends = _window_ends(eng, "s", [10.0 + 0.5 * k for k in range(7)])
+    assert len(ends) == 1 and ends[0] == pytest.approx(10.0 + 48128 / 16000, abs=1e-6)
+
+
+def test_audio_backwards_ts_resets_but_jitter_does_not():
+    eng = _stub_engine()
+    eng.vad = _StubVAD()
+    # small arrival jitter (< 0.25 s) keeps the stream: 3.5 s of audio yields a window
+    assert len(_window_ends(eng, "j", [0.0, 0.6, 0.9, 1.6, 2.0, 2.4, 3.1])) == 1
+    eng2 = _stub_engine()
+    eng2.vad = _StubVAD()
+    assert _window_ends(eng2, "b", [100.0 + 0.5 * k for k in range(5)]) == []
+    # ts jumps back by 50 s: restart, so 0.5 s more audio does not complete a window
+    assert _window_ends(eng2, "b", [52.5]) == []

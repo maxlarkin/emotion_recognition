@@ -30,3 +30,6 @@
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/3-live-webcam-analysis-with-overlay-and-latency-readout.md`
   summary: The AGENTS.md offline-URL grep for frontend/dist excludes `localhost`, but the frontend Dockerfile guard does not, so a local check passed while the image build failed on UI text containing http://localhost.
   evidence: AGENTS.md Фронтенд section vs frontend/Dockerfile RUN npm run build guard; align AGENTS.md with the Dockerfile guard (agent-context edit).
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/4-live-microphone-emotion-and-fusion-in-ui.md`
+  summary: The worker control loop (a per-source config for an unregistered source is skipped; removals run before configs) has no test, so a regression could resurrect per-source engine state for stopped sessions.
+  evidence: _worker_main is inline; tests call Engine.set_fusion directly. Needs a loop-body extraction or a models-marked test that inspects engine.sources after unregister + config.

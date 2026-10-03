@@ -3,7 +3,8 @@
 One connection = at most one session at a time; a session is one worker source.
 A receive task parses messages; a send task is the only writer to the socket and serialises
 everything queued for this connection (own replies and results routed by the InferenceHub).
-Audio chunks (0x02) and `config` are accepted and ignored until story 1.4.
+Audio chunks (0x02) go to the same worker source (media time = the client clock, like frames);
+`config` sets the fusion weights of this connection's sessions only.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 from collections import OrderedDict
 from typing import Any, Optional
@@ -20,7 +22,7 @@ from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketState
 
 from app.inference_hub import STARTING, HubUnavailable, InferenceHub, WorkerGone
-from inference.types import AudioResult, ErrorResult, FaceResult, FrameResult
+from inference.types import EMOTIONS, AudioResult, ErrorResult, FaceResult, FrameResult
 from sources.webcam import AudioPacket, BadMessage, WebcamFrame, decode_jpeg, parse_message
 
 log = logging.getLogger(__name__)
@@ -34,6 +36,8 @@ MSG_UNAVAILABLE = "Модуль распознавания недоступен,
 MSG_WORKER_DIED = "Модуль распознавания остановился, сессия завершена"
 MSG_BAD_CONTROL = "Некорректное управляющее сообщение (ожидается JSON с полем type)"
 MSG_FRAME_FAILED = "Не удалось обработать кадр"
+MSG_BAD_FUSION = "Некорректные веса объединения"
+MSG_FUSION_BUSY = "Не удалось применить веса объединения, повторите попытку"
 
 PENDING_MAX = 512  # frame ids awaiting a result per session (dropped ids are pruned by newer results)
 
@@ -51,14 +55,41 @@ def face_to_wire(face: FaceResult) -> dict:
 
 
 def audio_to_wire(audio: Optional[AudioResult]) -> Optional[dict]:
+    """None when no window is attached. Speech: 7-key probs + label. Silence: 7 zeros, label None."""
     if audio is None:
         return None
+    speech = bool(audio.speech) and audio.probs is not None
+    probs = {k: float(audio.probs.get(k, 0.0)) for k in EMOTIONS} if speech else {k: 0.0 for k in EMOTIONS}
     return {
-        "speech": audio.speech,
-        "probs": audio.probs,
-        "label": audio.label,
+        "speech": speech,
+        "probs": probs,
+        "label": audio.label if speech else None,
         "window_end_ts": audio.window_end_ts * 1000.0,
     }
+
+
+def parse_fusion(obj: dict) -> Optional[tuple[float, float]]:
+    """`{"type":"config","fusion":{"w_face":..,"w_audio":..}}` -> (w_face, w_audio) normalised to sum 1,
+    or None if invalid (not numbers, non-finite, negative, both 0)."""
+    fusion = obj.get("fusion")
+    if not isinstance(fusion, dict):
+        return None
+    out = []
+    for key in ("w_face", "w_audio"):
+        v = fusion.get(key)
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        try:
+            f = float(v)  # a huge JSON integer overflows here
+        except OverflowError:
+            return None
+        if not math.isfinite(f) or f < 0:
+            return None
+        out.append(f)
+    total = out[0] + out[1]
+    if not math.isfinite(total) or total <= 0:
+        return None
+    return out[0] / total, out[1] / total
 
 
 def frame_result_to_wire(res: FrameResult, capture_ts: float, proc_ms: float) -> dict:
@@ -86,6 +117,7 @@ class LiveConnection:
         # frame_id -> (capture_ts ms as sent, receipt time perf_counter s), in receipt order
         self.pending: OrderedDict[int, tuple[float, float]] = OrderedDict()
         self.not_started_reported = False
+        self.fusion: Optional[tuple[float, float]] = None  # set by `config`; None = worker defaults
 
     # ---- main
 
@@ -144,10 +176,11 @@ class LiveConnection:
             sid, self.source_id = self.source_id, None
             self.pending.clear()
             self.not_started_reported = False
+            self.fusion = None  # weights belong to the stopped session
             if sid is not None and self.hub is not None:
                 await asyncio.to_thread(self.hub.unregister, sid)
         elif kind == "config":
-            pass  # fusion weights: story 1.4
+            await self._config(obj)
         else:
             self._reply(error_msg(f"Неизвестный тип управляющего сообщения: {kind[:40]}"))
 
@@ -163,9 +196,34 @@ class LiveConnection:
         except HubUnavailable as exc:
             self._reply(error_msg(MSG_LOADING if exc.state == STARTING else MSG_UNAVAILABLE))
             return
+        if self.fusion is not None:  # weights configured before this session started
+            if not await self._apply_fusion(sid, self.fusion):
+                self.fusion = None
         self.source_id = sid
         self.not_started_reported = False
         self._reply({"type": "session", "session_id": sid})
+
+    async def _config(self, obj: dict) -> None:
+        weights = parse_fusion(obj)
+        if weights is None:
+            self._reply(error_msg(MSG_BAD_FUSION))  # the current weights stay
+            return
+        sid = self.source_id
+        if sid is None:
+            self.fusion = weights  # applied when the next session starts
+        elif await self._apply_fusion(sid, weights):
+            self.fusion = weights
+
+    async def _apply_fusion(self, sid: str, weights: tuple[float, float]) -> bool:
+        if self.hub is None:
+            return False
+        try:
+            applied = await asyncio.to_thread(self.hub.set_fusion, sid, *weights)
+        except (HubUnavailable, KeyError):
+            return False  # worker gone (WorkerGone follows) or the session was stopped meanwhile
+        if not applied:
+            self._reply(error_msg(MSG_FUSION_BUSY))
+        return applied
 
     async def _on_binary(self, data: bytes) -> None:
         t_recv = time.perf_counter()
@@ -174,14 +232,19 @@ class LiveConnection:
         except BadMessage as exc:
             self._reply(error_msg(exc.message))
             return
-        if isinstance(parsed, AudioPacket):
-            return  # audio: story 1.4
         sid = self.source_id
         if sid is None or self.hub is None:
-            if not self.not_started_reported:
+            if not self.not_started_reported:  # once, shared by frames and audio
                 self.not_started_reported = True
                 self._reply(error_msg(MSG_NOT_STARTED))
             return
+        if isinstance(parsed, AudioPacket):
+            # The worker's ts is in seconds, on the same (client) clock as the frames.
+            try:
+                await asyncio.to_thread(self.hub.submit_audio, sid, parsed.pcm, parsed.capture_ts / 1000.0)
+            except (HubUnavailable, KeyError):
+                pass  # worker gone (WorkerGone follows) or the session was stopped meanwhile
+            return  # a full inbound queue drops the chunk silently
         # Recorded before submitting: the result may be routed back before to_thread returns.
         self.pending[parsed.frame_id] = (parsed.capture_ts, t_recv)
         self.pending.move_to_end(parsed.frame_id)

@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { encodeFrame, encodeFrameHeader, HEADER_BYTES, parseServerMessage } from "./protocol";
+import {
+  AUDIO_HEADER_BYTES,
+  EMOTIONS,
+  encodeAudio,
+  encodeFrame,
+  encodeFrameHeader,
+  HEADER_BYTES,
+  parseAudio,
+  parseServerMessage,
+  type FrameResult,
+} from "./protocol";
 
 describe("encodeFrameHeader", () => {
   it("lays out 0x01 | f64 LE capture_ts | u32 LE frame_id", () => {
@@ -49,5 +59,63 @@ describe("parseServerMessage", () => {
     expect(parseServerMessage("{oops")).toBeNull();
     expect(parseServerMessage('{"type":"other"}')).toBeNull();
     expect(parseServerMessage('{"type":"frame_result","frame_id":1,"capture_ts":1,"faces":[{"box":[1,2]}]}')).toBeNull();
+  });
+});
+
+describe("encodeAudio", () => {
+  it("lays out 0x02 | f64 LE capture_ts | PCM16 LE", () => {
+    // Same bytes as backend tests/test_ws_live.py::test_audio_header_matches_client_layout
+    expect(Array.from(encodeAudio(1.5, Int16Array.of(1, -2)))).toEqual([
+      0x02, 0, 0, 0, 0, 0, 0, 0xf8, 0x3f, 0x01, 0x00, 0xfe, 0xff,
+    ]);
+  });
+
+  it("500 ms chunk: header + 16000 bytes, realistic timestamp", () => {
+    const msg = encodeAudio(1727780000123.4, new Int16Array(8000));
+    expect(msg.byteLength).toBe(AUDIO_HEADER_BYTES + 16000);
+    expect(new DataView(msg.buffer).getFloat64(1, true)).toBe(1727780000123.4);
+  });
+});
+
+describe("parseAudio", () => {
+  const probs = { anger: 0.1, disgust: 0, fear: 0, happiness: 0.25, sadness: 0.05, surprise: 0, neutral: 0.6 };
+  const zeros = Object.fromEntries(EMOTIONS.map((k) => [k, 0]));
+
+  it("speech window", () => {
+    expect(parseAudio({ speech: true, probs, label: "neutral", window_end_ts: 5 })).toEqual({
+      speech: true,
+      probs,
+      label: "neutral",
+      window_end_ts: 5,
+    });
+  });
+
+  it("silent window: zeros and no label", () => {
+    expect(parseAudio({ speech: false, probs: zeros, label: null, window_end_ts: 5 })).toEqual({
+      speech: false,
+      probs: zeros,
+      label: null,
+      window_end_ts: 5,
+    });
+  });
+
+  it("null and malformed blocks give null", () => {
+    expect(parseAudio(null)).toBeNull();
+    expect(parseAudio({ speech: true, probs: { anger: 1 }, label: "anger" })).toBeNull(); // missing keys
+    expect(parseAudio({ speech: true, probs, label: "joy" })).toBeNull();
+    expect(parseAudio({ speech: true, probs, label: null })).toBeNull();
+    expect(parseAudio({ speech: "yes", probs, label: null })).toBeNull();
+    expect(parseAudio({ speech: true, probs, label: "neutral" })).toBeNull(); // no window_end_ts
+    expect(parseAudio({ speech: false, probs: zeros, label: null, window_end_ts: "5" })).toBeNull();
+  });
+
+  it("frame_result carries the parsed block; a malformed one does not drop the frame", () => {
+    const base = { type: "frame_result", frame_id: 1, capture_ts: 2, proc_ms: 3, faces: [] };
+    const ok = parseServerMessage(JSON.stringify({ ...base, audio: { speech: true, probs, label: "neutral", window_end_ts: 9 } }));
+    expect((ok as FrameResult).audio?.label).toBe("neutral");
+    const bad = parseServerMessage(JSON.stringify({ ...base, audio: { speech: true, probs, label: "neutral" } }));
+    expect(bad).not.toBeNull();
+    expect((bad as FrameResult).audio).toBeNull();
+    expect((parseServerMessage(JSON.stringify({ ...base, audio: null })) as FrameResult).audio).toBeNull();
   });
 });

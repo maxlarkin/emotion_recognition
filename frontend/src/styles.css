@@ -63,4 +63,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .readout div { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
 .readout dt { font-size: 0.8rem; color: var(--muted); }
 .readout dd { margin: 2px 0 0; font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.readout.panel { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 560px) { .readout.panel { grid-template-columns: minmax(0, 1fr); } }
+.readout.panel dd { font-size: 1.1rem; font-variant-numeric: normal; overflow-wrap: anywhere; }
+button.secondary.off { border-color: var(--muted); color: var(--muted); }
+.actions { flex-wrap: wrap; }
 .hint { font-size: 0.85rem; color: var(--muted); margin: 8px 0 0; }
