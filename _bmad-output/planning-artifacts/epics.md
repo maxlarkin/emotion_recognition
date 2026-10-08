@@ -4,7 +4,7 @@ Derived from `_bmad-output/specs/spec-emotion-recognition-mvp/stories.yaml` (sou
 
 ## Epic 1: Real-time emotion recognition MVP
 
-Working offline Docker prototype: live webcam + mic emotion recognition, parallel analysis of 3+ RTSP streams, file analysis, export, plus regulation and scaling documents (SPEC CAP-1..CAP-10).
+Working offline Docker prototype for a quality manager: live webcam + mic emotion recognition, parallel analysis of 20 RTSP streams of three camera types, an emotion event journal, file analysis, export, plus benchmark, accuracy (face-size sweep), per-camera-type media regulation and a 30–50 camera hardware plan (SPEC CAP-1..CAP-11).
 
 ### Story 1.1: Repository skeleton and Docker compose with CPU and GPU profiles
 
@@ -42,60 +42,76 @@ Persist live session results to SQLite in the data volume, add sessions list and
 
 **Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "5"). Checkpoints: spec=false, done=false.
 
-### Story 1.6: RTSP multi-stream ingest with demo cameras
+### Story 1.6: RTSP ingest with camera profiles
 
-Add RTSP source processes feeding the shared worker, /api/streams, /ws/streams and rtsp sessions, plus the demo-cams compose profile (MediaMTX + ffmpeg emulator) with three openly licensed clips and ATTRIBUTION.md (CAP-10 backend, interfaces.md RTSP streams, stack.md RTSP ingest and Demo cameras).
+Add RTSP sources feeding the shared worker with per-stream camera_type, profile detection size, 5 fps sampling and NVDEC decode with CPU fallback, plus /api/streams, /ws/streams, rtsp sessions and the demo-cams profile running a few clips (CAP-10 backend, interfaces.md RTSP streams, stack.md RTSP ingest, camera-profiles.md).
 
-**Dev notes:** Find openly licensed (Creative Commons or public domain) clips with close-up faces and Russian speech; record source URL, author and licence per clip in demo-videos/ATTRIBUTION.md; stop and report if no suitable clips are found. Clips must be usable offline after build.
+**Dev notes:** camera_type defaults to sector. Verify NVDEC decode via PyAV hwaccel on the RTX 3050 and record whether it works; CPU decode must remain the fallback.
 
 **Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "6"). Checkpoints: spec=true, done=false.
 
-### Story 1.7: Multi-camera grid screen with system load
+### Story 1.7: Twenty-camera demo set and throughput
 
-Russian multi-camera page: tile per stream with analysed frames, boxes, facial/vocal/fused emotions, per-stream FPS and p50/p95 latency, stream add/remove by RTSP URL, status and overall CPU/RAM/GPU/VRAM load via /api/system (CAP-10 UI).
+Build the 20-stream demo mix (clip prep script encoding per camera profile, emulator looping with -c copy, DEFAULT_STREAMS) and tune the pipeline until the mix meets CAP-10 numbers on the GPU profile (camera-profiles.md 20-stream demo mix, stack.md Demo cameras and Detection cost).
 
-**Dev notes:** Demo milestone: run 3 emulated cameras for 10 min on the GPU profile and report per-stream fps and p95 latency in the completion report.
+**Dev notes:** Find openly licensed (Creative Commons or public domain) clips with faces, Russian speech and clear negative and positive moments; record source URL, author and licence per clip in demo-videos/ATTRIBUTION.md; stop and report if no suitable clips are found. Run the mix for 10 min; if any stream falls below 5 fps or proc_ms p95 exceeds 100 ms, apply the detection fallback from stack.md and report the numbers before and after.
 
-**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "7"). Checkpoints: spec=false, done=true.
+**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "7"). Checkpoints: spec=true, done=true.
 
-### Story 1.8: Recorded video upload, analysis and synced playback
+### Story 1.8: Multi-camera grid screen for twenty cameras with system load
+
+Russian multi-camera page for 20 tiles: analysed frames, boxes, facial/vocal/fused emotions, per-stream FPS and p50/p95 latency, stream add/remove by RTSP URL with camera type, status and overall CPU/RAM/GPU/VRAM load via /api/system (CAP-10 UI).
+
+**Dev notes:** Demo milestone: run the 20-stream mix for 10 min on the GPU profile and report per-stream fps and p95 latency in the completion report.
+
+**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "8"). Checkpoints: spec=false, done=true.
+
+### Story 1.9: Emotion event engine and journal
+
+Implement the event rule per face track, event persistence, the event WS message, /api/events with filters and export, and the Russian journal screen with negative events highlighted (CAP-11, stack.md Emotion events, interfaces.md Emotion event).
+
+**Dev notes:** Events come from every source, including webcam and file sessions. Never store face images. Show in the completion report that the demo clips' negative and positive moments each produce an event.
+
+**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "9"). Checkpoints: spec=true, done=true.
+
+### Story 1.10: Recorded video upload, analysis and synced playback
 
 Upload endpoint, ffmpeg-based file job with progress, synced playback overlay and emotion timeline chart, export reuse (CAP-3).
 
 **Dev notes:** Cover edge cases: no audio track, no faces, unsupported codec returns failed status with a message.
 
-**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "8"). Checkpoints: spec=false, done=true.
+**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "10"). Checkpoints: spec=false, done=true.
 
-### Story 1.9: Offline and cross-platform hardening
+### Story 1.11: Offline and cross-platform hardening
 
-GPU-to-CPU fallback with UI warning, offline verification with network disabled (including the demo-cams profile), Windows Docker Desktop (WSL2) run check, README run guide (CAP-5 full).
+GPU-to-CPU fallback with UI warning, offline verification with network disabled (including the 20-camera demo-cams profile and the event journal), Windows Docker Desktop (WSL2) run check, README run guide (CAP-5 full).
 
 **Dev notes:** Grep built frontend for external URLs; any CDN or remote font reference fails the story.
 
-**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "9"). Checkpoints: spec=false, done=true.
+**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "11"). Checkpoints: spec=false, done=true.
 
-### Story 1.10: Multi-stream capacity benchmark and report
+### Story 1.12: Per-profile capacity benchmark and report
 
-Extend bench to run N parallel 720p@5fps RTSP streams from the demo-cams emulator with and without audio until real time breaks, on CPU and GPU, and write docs/benchmark-report.md (CAP-6 full).
+Extend bench to measure detection per profile size, decode cost CPU vs NVDEC, and the maximum parallel streams per camera profile at 5 fps with and without audio on CPU and GPU, writing docs/benchmark-report.md (CAP-6 full).
 
-**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "10"). Checkpoints: spec=false, done=false.
+**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "12"). Checkpoints: spec=false, done=false.
 
-### Story 1.11: Offline accuracy evaluation script and report
+### Story 1.13: Accuracy evaluation with face-size sweep
 
-Script computing UAR, macro-F1 and confusion matrices for FER and SER on public test subsets, writing docs/evaluation-report.md (CAP-7).
+Script computing UAR, macro-F1 and confusion matrices for FER and SER on public test subsets plus the FER face-size sweep (16-100 px) for 7 classes and 3 groups, writing docs/evaluation-report.md (CAP-7).
 
 **Dev notes:** Datasets are not bundled in images; script takes local dataset paths. Document how to obtain each dataset.
 
-**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "11"). Checkpoints: spec=true, done=false.
+**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "13"). Checkpoints: spec=true, done=false.
 
-### Story 1.12: Media quality regulation document
+### Story 1.14: Media quality regulation per camera type
 
-Write docs/media-requirements.md from research.md section 4.2 plus CAP-7 results, with evidence per parameter and measurement conditions for accuracy targets (CAP-8).
+Write docs/media-requirements.md with minimum and recommended parameters per camera type, derived from the CAP-7 sweep through pixels-per-metre and research.md section 4.2 (CAP-8, camera-profiles.md).
 
-**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "12"). Checkpoints: spec=false, done=true.
+**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "14"). Checkpoints: spec=false, done=true.
 
-### Story 1.13: Scaling plan for 20+ cameras
+### Story 1.15: Hardware plan for 30-50 cameras and outlook to 3000
 
-Write docs/scaling-plan.md comparing single-server and multi-node options with hardware and cost, grounded in benchmark-report.md and research.md section 3 (CAP-9).
+Write docs/scaling-plan.md with per-profile node capacity from benchmark-report.md, single-server vs multi-node hardware and cost for 30-50 cameras, edge-plus-centre architecture for 3000, the alert and ticket adapter seam, and one recommended stack (CAP-9).
 
-**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "13"). Checkpoints: spec=false, done=true.
+**Spec:** `_bmad-output/specs/spec-emotion-recognition-mvp/` (stories.yaml id "15"). Checkpoints: spec=false, done=true.

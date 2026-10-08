@@ -38,6 +38,7 @@ This socket is for viewing only. The server pushes updates for every active stre
 | Analysed frame | Binary: 1-byte type `0x11`, 2-byte uint16 `stream_id` length, then that many UTF-8 bytes of `stream_id`, 4-byte uint32 `frame_id`, then the JPEG bytes (longest side ≤ 640 px). |
 | Frame result | Text JSON: `{"type":"stream_result","stream_id":"cam1","frame_id":123,"decode_ts":...,"emit_ts":...,"faces":[...same face objects as frame_result...],"audio":{...same audio block...},"fps":7.9}`. The binary frame with the same `frame_id` is sent just before it. |
 | Stream status | Text JSON: `{"type":"stream_status","stream_id":"cam1","state":"connecting"|"running"|"reconnecting"|"stopped"|"error","message":"..."}` |
+| Emotion event | Text JSON, sent for events from every source (RTSP, webcam, file): `{"type":"event","event":{...event object...}}` |
 | System load | Text JSON, once per second: `{"type":"system","server_ts":..,"cpu_pct":..,"ram_used_mb":..,"ram_total_mb":..,"gpu_util_pct":..|null,"vram_used_mb":..|null,"vram_total_mb":..|null}` |
 
 **Client → server.** Text JSON. `{"type":"subscribe","stream_ids":["cam1","cam2"]}` limits the subscription; with no subscribe message, the client receives all streams.
@@ -51,8 +52,8 @@ This socket is for viewing only. The server pushes updates for every active stre
 |---|---|---|
 | GET | `/api/health` | `{"status":"ok","device":"cuda"|"cpu","models":{...loaded}}` |
 | POST | `/api/files` | multipart upload; returns `{"session_id"}` and starts analysis |
-| GET | `/api/streams` | list streams: `id, name, url (credentials masked), state, fps, session_id` |
-| POST | `/api/streams` | `{"name":"Камера 1","url":"rtsp://..."}`; returns `{"id"}`, starts ingest and analysis, creates a session of kind `rtsp` |
+| GET | `/api/streams` | list streams: `id, name, url (credentials masked), camera_type, state, fps, session_id` |
+| POST | `/api/streams` | `{"name":"Камера 1","url":"rtsp://...","camera_type":"webcam"|"sector"|"security"}`; `camera_type` defaults to `sector`. Returns `{"id"}`, starts ingest and analysis, creates a session of kind `rtsp` |
 | DELETE | `/api/streams/{id}` | stop the stream; its session becomes finished and exportable |
 | GET | `/api/system` | same payload as the `system` WS message |
 | GET | `/api/sessions` | list sessions: id, kind (`live`, `file` or `rtsp`), created_at, duration, status |
@@ -61,6 +62,8 @@ This socket is for viewing only. The server pushes updates for every active stre
 | GET | `/api/sessions/{id}/media` | the uploaded file, for playback (file sessions only) |
 | GET | `/api/sessions/{id}/export?format=csv|json` | download |
 | DELETE | `/api/sessions/{id}` | remove session data |
+| GET | `/api/events?kind=negative|positive&stream_id=&from_ms=&to_ms=&limit=200&before_id=` | event objects, newest first |
+| GET | `/api/events/export?format=csv|json` (same filters) | download the journal |
 
 File-session `status` takes one of these values: `queued`, `processing`, `done`, `failed`. The `notes` array may contain `no_audio_track` or `no_faces_detected`.
 
@@ -71,3 +74,15 @@ File-session `status` takes one of these values: `queued`, `processing`, `done`,
 - `stream_id` is empty for webcam and file sessions.
 - Face rows carry box and face probabilities.
 - Audio rows carry the audio probabilities, mapped to the 7 keys with zeros where there is no audio counterpart, plus `audio_label` and `speech`. Their box columns are empty.
+
+## Emotion event (CAP-11)
+
+```json
+{"event_id":"...","kind":"negative","session_id":"...","stream_id":"cam7","camera_type":"sector",
+ "track_id":3,"start_ts":1727780000123.4,"emit_ts":1727780002301.0,"duration_ms":2100,
+ "emotion":"anger","group_prob":0.74}
+```
+
+- `kind` is `negative` or `positive`. `emotion` is the strongest emotion of the group over the held interval. `group_prob` is the mean group probability over that interval.
+- `stream_id` and `camera_type` are null for webcam and file sessions. Timestamps use the server clock, except webcam sessions, which use the client `capture_ts`.
+- Export columns (CSV; JSON = array of the same objects): `event_id, kind, session_id, stream_id, camera_type, track_id, start_ts, emit_ts, duration_ms, emotion, group_prob`.

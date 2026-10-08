@@ -3,6 +3,7 @@ id: SPEC-emotion-recognition-mvp
 companions:
   - stack.md
   - interfaces.md
+  - camera-profiles.md
   - architecture-diagrams.md
   - ../../planning-artifacts/research/technical-realtime-emotion-recognition-2026-10-01/research.md
 sources: []
@@ -14,7 +15,9 @@ sources: []
 
 ## Why
 
-Mandate plus vision. An educational project must deliver, within 1.5 months, a working prototype that recognizes human emotions in real time from video and audio. It must demonstrate parallel processing of at least 3 video streams, and it must come with a media quality regulation and a justified path to 20+ parallel cameras. The team has only a laptop (4 GB VRAM NVIDIA GPU, 16 GB RAM) and no GPU server. The MVP must therefore run locally, offline, on open pretrained models with no fine-tuning. Research (`research.md`) selected those models and showed that 95–98% accuracy is unattainable on in-the-wild data. The MVP is judged as a working demo, not on accuracy.
+A quality manager oversees client service points spread across cities and countries. Each point has cameras with audio of three types: a webcam on the manager's PC facing the client, high-resolution sector cameras, and security dome cameras (`camera-profiles.md`). Video is primary and audio is secondary. Negative client emotions must reach the manager quickly; positive ones are only recorded. The near-term scale is 30–50 cameras, later up to 3000.
+
+This educational project must deliver, within 1.5 months, a working prototype that recognises emotions in real time and processes 20 parallel camera streams on one laptop (4 GB VRAM NVIDIA GPU, 16 GB RAM). It must also answer two questions with evidence: which camera resolution is the lowest that still gives reliable recognition for each camera type (target 80%), and what local hardware handles 30–50 cameras. The system runs offline on open pretrained models with no fine-tuning. Research (`research.md`) shows 95–98% is unattainable on in-the-wild data. The MVP is judged as a working demo; accuracy numbers are measured, not required.
 
 ## Capabilities
 
@@ -37,47 +40,64 @@ Mandate plus vision. An educational project must deliver, within 1.5 months, a w
   - **intent:** Operator starts the whole system with one Docker command on Linux or Windows and uses it without internet.
   - **success:**
     - `docker compose up` (CPU profile) and `docker compose --profile gpu up` (GPU profile) bring the app up at `http://localhost` on Linux and on Windows (Docker Desktop, WSL2).
-    - With the network disconnected, CAP-1–CAP-4 and CAP-10 (with emulated cameras) still work.
+    - With the network disconnected, CAP-1–CAP-4, CAP-10 (with emulated cameras) and CAP-11 still work.
     - The GPU profile falls back to CPU with a visible warning if no GPU is available.
 - **CAP-6**
-  - **intent:** Team measures runtime cost on the target machine to ground scaling claims.
+  - **intent:** Team measures runtime cost on the target machine to ground the 20-stream demo and the 30–50 camera hardware sizing.
   - **success:** One command runs a benchmark and writes a report covering:
-    - ms per frame for detection and FER;
+    - ms per frame for detection (at each camera profile's detection size) and FER;
     - ms per audio window for SER;
+    - decode cost per stream for each camera profile, CPU decode vs NVDEC;
     - peak VRAM and RAM;
-    - maximum sustainable number of parallel 720p@5 fps streams, with and without audio.
-    
+    - maximum sustainable number of parallel streams per camera profile at 5 fps, with and without audio.
+
     The report is produced for both the CPU and GPU profiles.
 - **CAP-7**
-  - **intent:** Team measures the recognition quality of the chosen models on public test data.
-  - **success:** One command runs an offline evaluation script. It reports UAR, macro-F1 and a confusion matrix for FER on a RAF-DB or AffectNet test subset, and for SER on RESD and Dusha test subsets. Results are saved as a markdown report.
+  - **intent:** Team measures the recognition quality of the chosen models on public test data, including how quality falls as faces get smaller.
+  - **success:** One command runs an offline evaluation script and saves a markdown report with:
+    - UAR, macro-F1 and a confusion matrix for FER on a RAF-DB or AffectNet test subset, and for SER on RESD and Dusha test subsets;
+    - a face-size sweep: the FER test faces downscaled to 16, 24, 32, 48, 64 and 100 px, with UAR per size for 7 classes and for 3 groups (negative / neutral / positive);
+    - the smallest face size that reaches the 80% target, or a statement that it is not reached.
 - **CAP-8**
-  - **intent:** Team delivers a media quality regulation: the minimum video and audio parameters for reliable recognition.
+  - **intent:** Team delivers a media quality regulation: the minimum video and audio parameters for reliable recognition, per camera type.
   - **success:** A document in the repo specifies the following, each with its evidence source:
-    - resolution, face size in px, interocular distance, frame rate, compression, head pose, occlusion, lighting;
+    - for each camera type in `camera-profiles.md`: minimum and recommended resolution, lens / horizontal field of view, distance to the client, mounting height and angle, frame rate, bitrate;
+    - face size in px, interocular distance, head pose, occlusion, lighting, compression;
     - audio sample rate, bit depth, codec/bitrate, SNR, segment length;
     - the measurement conditions under which accuracy targets are stated.
-    
-    The draft table in `research.md` §4.2 is the seed, and CAP-7 results are added where available.
-- **CAP-9**
-  - **intent:** Team delivers a justified deployment plan for ≥20 parallel camera streams.
-  - **success:** A document in the repo gives the stream-per-node capacity measured by CAP-6. It compares single-server and multi-node options with hardware and cost, and recommends one, citing `research.md` §3.
 
+    Minimum resolutions follow from the CAP-7 face-size sweep converted through pixels-per-metre. The `research.md` §4.2 table is the seed.
+- **CAP-9**
+  - **intent:** Team delivers a justified local (on-prem) deployment plan for 30–50 cameras, with an outlook to 3000.
+  - **success:** A document in the repo gives:
+    - stream-per-node capacity per camera profile, measured by CAP-6;
+    - hardware requirements (CPU, GPU, RAM, disk, network) for 30–50 cameras, comparing at least one single-server and one multi-node option with cost;
+    - an architecture outlook for 3000 cameras (edge processing at sites, events to a centre);
+    - the seam where alert delivery (SMS, messenger, email) and ticket creation plug into CAP-11 events;
+    - one recommended technology stack, citing `research.md` §3.
 - **CAP-10**
-  - **intent:** Operator connects at least 3 RTSP video streams, either emulated cameras or real IP cameras given by URL. The system analyses all of them in parallel: face, audio and fusion. The operator watches them on one multi-camera screen.
+  - **intent:** Operator connects 20 RTSP video streams of mixed camera types, either emulated cameras or real IP cameras given by URL. The system analyses all of them in parallel (face, audio where present, fusion). The operator watches them on one multi-camera screen.
   - **success:**
-    - On the target laptop (GPU profile), 3 emulated 720p cameras with audio are analysed simultaneously for 10 min.
+    - On the target laptop (GPU profile), the 20-stream demo mix (`camera-profiles.md`) is analysed simultaneously for 10 min.
+    - Each stream sustains ≥ 5 analysed fps. Per-frame inference time p95 ≤ 100 ms. Per-stream decode-to-result p95 < 1000 ms.
     - Each tile shows the analysed frames with face boxes, facial/vocal/fused emotions, the stream's analysis FPS and p50/p95 latency.
-    - Per-stream p95 latency stays < 1000 ms, and each stream sustains ≥ 5 analysed fps.
     - The screen shows overall CPU, RAM, GPU utilisation and VRAM.
     - Stopping one stream, or losing its connection, does not affect the others. A lost stream shows its status and reconnects when the source returns.
-    - Adding a stream by RTSP URL in the UI starts its analysis without restarting the system.
+    - Adding a stream by RTSP URL and camera type in the UI starts its analysis without restarting the system.
+- **CAP-11**
+  - **intent:** The manager sees a journal of client emotion events: negative events that need attention and positive events recorded as facts.
+  - **success:**
+    - A sustained negative or positive emotion on a face track creates one event by the event rule (`stack.md`), within 1 s of the rule holding. A different client produces a new track and its own events.
+    - Events from every source are stored and appear live in a Russian journal screen with camera, time, emotion, confidence and duration. Negative events are visually highlighted.
+    - The journal filters by kind, camera and time range and exports CSV and JSON.
+    - In the 20-stream demo, the scripted negative and positive moments in the demo clips each produce an event.
 
 ## Constraints
 
-- **Target hardware:** laptop with an NVIDIA GPU of 4 GB VRAM and 16 GB RAM. Every model must load together within these limits. No GPU server or cloud at runtime.
-- **CPU-only must work.** Docker GPU passthrough is not guaranteed on every Linux or Windows machine.
+- **Target hardware:** laptop with an NVIDIA GPU of 4 GB VRAM and 16 GB RAM. Every model must load together within these limits, and the 20-stream demo runs on it. No GPU server or cloud at runtime.
+- **CPU-only must work.** Docker GPU passthrough is not guaranteed on every Linux or Windows machine. The 20-stream targets apply to the GPU profile only.
 - **Fully offline at runtime.** No calls to external services, CDNs or model hubs once the images are built. Model weights ship inside the image.
+- **Emotions only.** No face recognition, no face embeddings, no stored face images or identities.
 - **Linux and Windows via Docker only.** No native installs required from the user.
 - **Fixed stack:** FastAPI backend and React frontend.
 - **UI text is in Russian.**
@@ -89,11 +109,13 @@ Mandate plus vision. An educational project must deliver, within 1.5 months, a w
 ## Non-goals
 
 - Fine-tuning on Russian media content (planned after the MVP; datasets are listed in `research.md`).
+- Person identification, re-identification across cameras, or tracking repeat visits.
+- Delivering alerts by SMS, messenger or email, and creating tickets in a control system. The MVP stops at the event journal; CAP-9 documents the seam.
+- Running more than 20 streams in the MVP. CAP-9 covers 30–50 and 3000.
 - Authentication, user accounts, multi-user access.
-- Running ≥20 cameras in the MVP. The CAP-9 document covers that scale, and CAP-10 demonstrates ≥3.
 - ONVIF discovery, PTZ control, recording RTSP video, and RTSP authentication beyond credentials in the URL.
-- Meeting the 95% / 98% accuracy targets.
-- Exporting annotated video (burned-in overlay MP4).
+- Reaching 80% (or 95% / 98%) accuracy. Targets are measured and reported, lower results are acceptable.
+- Exporting annotated video (burned-in overlay MP4) and storing face snapshots with events.
 - Cloud deployment, Kubernetes, horizontal scaling infrastructure.
 - Emotions beyond the 7 basic ones; valence/arousal; micro-expressions.
 
@@ -104,15 +126,26 @@ On the target laptop, with the network unplugged, a fresh `docker compose --prof
 2. Face boxes and emotions update with p95 latency under 1 s.
 3. When the user speaks, a vocal emotion appears.
 4. The user uploads a recorded clip, gets its analysis, and downloads CSV/JSON.
-5. The operator starts 3 emulated cameras, and the multi-camera screen shows all 3 analysed in parallel (faces, voice, fused emotion) with per-stream latency under 1 s and the CPU/GPU load.
+5. The operator starts the 20 emulated cameras of three types. The multi-camera screen shows all 20 analysed in parallel at ≥ 5 fps with per-stream latency under 1 s and the CPU/GPU load.
+6. The journal screen shows negative and positive events from those cameras as they happen, and exports them.
 
-The regulation (CAP-8) and scaling plan (CAP-9) documents are in the repo, backed by the benchmark (CAP-6) and evaluation (CAP-7) reports.
+The regulation (CAP-8) and hardware plan (CAP-9) documents are in the repo, backed by the benchmark (CAP-6) and evaluation (CAP-7) reports.
 
 ## Assumptions
 
 - "Offline" means runtime only. Images are built once with internet access, or transferred with `docker save` / `docker load`.
-- One user and one webcam session at a time. RTSP streams run in parallel with it, but the ≥3-stream demo does not need the webcam.
+- One user and one webcam session at a time. RTSP streams run in parallel with it, but the 20-stream demo does not need the webcam.
 - CSV and JSON export satisfies "export". Annotated MP4 is not needed.
 - The contempt class of the 8-class FER model is dropped and the remaining probabilities are renormalised to the 7 basic emotions.
-- Demo clips are openly licensed videos (e.g. Creative Commons) with close-up faces and Russian speech. They live in `demo-videos/` with an `ATTRIBUTION.md` and are available offline.
 - Audio labels map as follows: angry → anger, sad → sadness, neutral → neutral, positive → happiness. Fear, disgust and surprise come from the face only.
+- Emotion groups: negative = anger, disgust, fear, sadness; positive = happiness; neutral = neutral, surprise.
+- "Tens of milliseconds" means per-frame inference time. Network buffering and the event rule's 2 s debounce add to the time until an event, on purpose.
+- A client change needs no special handling beyond face tracks: a new person gets a new track and new events.
+- Demo clips are openly licensed videos (e.g. Creative Commons) with faces and Russian speech. They live in `demo-videos/` with an `ATTRIBUTION.md` and are available offline.
+- Camera geometry used for face-size estimates is listed in `camera-profiles.md` and is replaced by measured values when real cameras are known.
+
+## Open questions
+
+- Security cameras at 6–8 m give ~20–30 px faces at 2K with a 2.8 mm lens and look down steeply. Accept low quality there, or require a 6–8 mm lens or ROI streams?
+- Production webcams at remote points: `getUserMedia` needs HTTPS outside localhost. Publish webcams through an RTSP agent, or serve the UI over HTTPS? (Post-MVP.)
+- 152-FZ: does processing client video for emotions, without identification, need client notice or consent at service points? Legal check before production.

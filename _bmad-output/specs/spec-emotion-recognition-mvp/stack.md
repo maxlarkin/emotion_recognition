@@ -20,15 +20,23 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
 - **Live audio:** PCM16 mono 16 kHz, 500 ms chunks. SER runs on a sliding 3 s window (hop 1 s), only when VAD marks speech in ≥ 50% of the window.
 - **Fusion:** over all 7 keys, `p = renormalise(w_face·p_face + w_audio·p_audio)`. Defaults: w_face = 0.7, w_audio = 0.3. `p_audio` is 0 for disgust, fear and surprise (no SER class), so those keys get only the weighted face term. No speech: w_audio = 0, and the fused distribution equals the face distribution.
 - **RTSP ingest:**
-  - One source process per stream decodes with PyAV (TCP transport, 5 s open timeout).
-  - Video is sampled to the analysis rate (default 8 fps, minimum 5). The audio track is resampled to 16 kHz mono and windowed like live audio.
+  - One source per stream decodes with PyAV (TCP transport, 5 s open timeout). The GPU profile decodes with NVDEC (PyAV `hwaccel` cuda) and falls back to CPU decode. With 20 streams, sources may be threads or a small process pool instead of one process each, to stay within 16 GB RAM.
+  - Video is sampled to the analysis rate (default 5 fps). The audio track, if present, is resampled to 16 kHz mono and windowed like live audio.
+  - Each stream has a `camera_type` (`camera-profiles.md`). Frames are scaled to that profile's detection size, and FER crops come from that frame.
   - Frames and audio go to the shared inference worker. A per-stream latest-frame slot drops stale frames, and the worker batches faces across streams.
   - On stream loss: reconnect with backoff of 1, 2, 4… seconds, capped at 30 s.
+- **Detection cost at large profiles:** YuNet cost grows with pixel count, so `sector` (1920) and `security` (2560) detection dominate CPU time. If CPU YuNet cannot hold the 20-stream mix at 5 fps, run the YuNet ONNX on ONNX Runtime CUDA EP, or detect every 2nd frame and let the tracker carry boxes. CAP-6 decides.
 - **Demo cameras:**
-  - Compose profile `demo-cams` adds two services. `mediamtx` runs `bluenviron/mediamtx`, pinned. `camera-emulator` runs ffmpeg, which loops `demo-videos/cam{1,2,3}.mp4` as H.264 + AAC to `rtsp://mediamtx:8554/cam{1,2,3}` with `-re -stream_loop -1`.
-  - The default stream list (env `DEFAULT_STREAMS`) points at those three URLs.
-  - Clips are openly licensed, with close-up faces and Russian speech. `demo-videos/ATTRIBUTION.md` records the source, author and licence of each.
+  - Compose profile `demo-cams` adds two services. `mediamtx` runs `bluenviron/mediamtx`, pinned. `camera-emulator` runs ffmpeg, which loops 20 clips to `rtsp://mediamtx:8554/cam1..cam20` with `-re -stream_loop -1 -c copy`.
+  - Clips are pre-encoded once per camera profile (resolution, 10 fps, H.264, AAC where the profile has audio) by a prep script, so the laptop does no live re-encoding. The mix and per-type geometry are in `camera-profiles.md`.
+  - The default stream list (env `DEFAULT_STREAMS`) points at those 20 URLs with their `camera_type`.
+  - Clips are openly licensed, with faces, Russian speech, and moments of clear negative and positive emotion. `demo-videos/ATTRIBUTION.md` records the source, author and licence of each.
+- **Emotion events (CAP-11):**
+  - Groups: negative = anger, disgust, fear, sadness; positive = happiness; neutral and surprise raise no event.
+  - Rule per face track on the smoothed fused probabilities: a negative event when the negative-group sum is ≥ 0.6 for ≥ 2 s; a positive event when happiness is ≥ 0.6 for ≥ 2 s. The same kind is not repeated on the same track within 30 s. Thresholds are configurable.
+  - The event is emitted within 1 s of the rule holding and stored in SQLite. An event carries the peak emotion, the mean group probability over the held interval, and the duration. No face image is stored.
 - **System load:** `psutil` for CPU and RAM. NVML (`nvidia-ml-py`) for GPU utilisation and VRAM; it reports null in the CPU image or when no GPU is present.
+- **Latency budget:** per-frame inference (`proc_ms`) p95 ≤ 100 ms with 20 streams; RTSP decode-to-result p95 < 1000 ms.
 - **File analysis:** decode with ffmpeg (PyAV). Video sampled at 5 fps. Audio resampled to 16 kHz mono and analysed in the same windows as live audio.
 
 ## Runtime
@@ -46,7 +54,8 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
 
 ```
 backend/   app/ (api, ws, sessions, export, streams), sources/ (webcam, rtsp, file), inference/ (detector, fer, vad, ser, fusion, tracker, worker), bench/, eval/
-frontend/  src/ (live, multicam grid, upload, session view, export)
+frontend/  src/ (live, multicam grid, event journal, upload, session view, export)
 docs/      media-requirements.md (CAP-8), scaling-plan.md (CAP-9), benchmark-report.md, evaluation-report.md
-demo-videos/ (clips + ATTRIBUTION.md), docker-compose.yml, backend/Dockerfile (+ gpu variant/arg), frontend/Dockerfile
+backend/   app/events (CAP-11 rule engine + journal API)
+demo-videos/ (clips + ATTRIBUTION.md, prep script for per-profile encodes), docker-compose.yml, backend/Dockerfile (+ gpu variant/arg), frontend/Dockerfile
 ```

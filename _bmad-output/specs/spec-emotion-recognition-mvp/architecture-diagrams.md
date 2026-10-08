@@ -30,38 +30,45 @@ flowchart LR
   SPA -.served to.-> Browser
 ```
 
-## Multi-camera RTSP (CAP-10, built in MVP)
+## Multi-camera RTSP and events (CAP-10, CAP-11, built in MVP)
 
 ```mermaid
 flowchart LR
   subgraph demo [profile demo-cams]
-    EMU[camera-emulator: ffmpeg loops demo-videos/cam1..3] --> MTX[MediaMTX rtsp://mediamtx:8554/camN]
+    EMU[camera-emulator: ffmpeg -c copy loops 20 pre-encoded clips] --> MTX[MediaMTX rtsp://mediamtx:8554/cam1..cam20]
   end
   IPC[real IP cameras] -.RTSP.-> SRC
-  MTX --> SRC[RTSP source process per stream: PyAV decode, 8 fps sample, audio 16 kHz]
+  MTX --> SRC[RTSP source per stream: PyAV/NVDEC decode, 5 fps sample, scale to camera_type detection size, audio 16 kHz]
   SRC --> SLOTS[per-stream latest-frame slots + audio FIFOs]
   SLOTS --> W[shared inference worker: batched faces, VAD+SER per stream, fusion]
   W --> RES[results bus]
   RES --> WSS[FastAPI /ws/streams] --> GRID[React multi-camera grid]
   RES --> DB[(SQLite sessions kind rtsp)]
+  RES --> EVT[event rule per track] --> DB
+  EVT --> WSS
+  EVT --> JRN[React event journal via /api/events]
   MON[psutil + NVML] --> WSS
 ```
 
-## Seam for scaling (CAP-9 target, not built in MVP)
+## Target for 30–50 cameras and outlook to 3000 (CAP-9, not built in MVP)
 
 ```mermaid
 flowchart LR
-  C1[IP cameras RTSP] --> MTX[MediaMTX]
-  MTX --> D1[decode node 1: HW decode, 5 fps sample]
-  MTX --> D2[decode node N]
-  D1 --> Q[(Redis Streams / NATS)]
-  D2 --> Q
-  Q --> I1[inference worker: batched faces]
-  Q --> I2[inference worker N]
-  I1 --> R[(results bus)]
-  I2 --> R
-  R --> API2[FastAPI WS/SSE] --> UI[React dashboard]
-  R --> PG[(PostgreSQL events)]
+  subgraph site [service point, edge node for large rollouts]
+    CAMS[webcam / sector / security cameras] --> EDGE[decode + detect + FER + event rule]
+  end
+  subgraph centre [on-prem centre]
+    MTX[MediaMTX] --> D1[decode nodes: NVDEC, 5 fps sample]
+    D1 --> Q[(NATS / Redis Streams)]
+    Q --> I1[inference workers: batched faces, TensorRT/ORT]
+    I1 --> EV[event rule]
+    EV --> PG[(PostgreSQL events)]
+    EV --> NOTIF[alert adapters: SMTP, messenger, SMS gateway]
+    EV --> TICK[ticket system webhook]
+    PG --> API2[FastAPI WS/SSE] --> UI[React journal + grid]
+  end
+  CAMS -.30–50 cameras: RTSP to centre.-> MTX
+  EDGE -.3000 cameras: events only.-> Q
 ```
 
-The MVP's `source → queue → worker → results` interfaces map one-to-one onto this picture. In the MVP the browser WebSocket is the only source adapter.
+The MVP's `source → queue → worker → results` interfaces map one-to-one onto this picture. At 30–50 cameras video goes to the centre. At 3000, bandwidth rules that out, so sites run edge nodes and send only events.

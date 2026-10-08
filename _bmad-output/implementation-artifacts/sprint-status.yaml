@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-01-2026 11:15
-last_updated: 10-03-2026 16:39
+last_updated: 10-08-2026 12:00
 project: emotion_recognition
 project_key: NOKEY
 tracking_system: file-system
@@ -41,12 +41,14 @@ development_status:
   1-3-live-webcam-analysis-with-overlay-and-latency-readout: done
   1-4-live-microphone-emotion-and-fusion-in-ui: done
   1-5-session-persistence-and-csv-json-export: backlog
-  1-6-rtsp-multi-stream-ingest-with-demo-cameras: backlog
-  1-7-multi-camera-grid-screen-with-system-load: backlog
-  1-8-recorded-video-upload-analysis-and-synced-playback: backlog
-  1-9-offline-and-cross-platform-hardening: backlog
-  1-10-multi-stream-capacity-benchmark-and-report: backlog
-  1-11-offline-accuracy-evaluation-script-and-report: backlog
-  1-12-media-quality-regulation-document: backlog
-  1-13-scaling-plan-for-20-cameras: backlog
+  1-6-rtsp-ingest-with-camera-profiles: backlog
+  1-7-twenty-camera-demo-set-and-throughput: backlog
+  1-8-multi-camera-grid-screen-for-twenty-cameras-with-system-load: backlog
+  1-9-emotion-event-engine-and-journal: backlog
+  1-10-recorded-video-upload-analysis-and-synced-playback: backlog
+  1-11-offline-and-cross-platform-hardening: backlog
+  1-12-per-profile-capacity-benchmark-and-report: backlog
+  1-13-accuracy-evaluation-with-face-size-sweep: backlog
+  1-14-media-quality-regulation-per-camera-type: backlog
+  1-15-hardware-plan-for-30-50-cameras-and-outlook-to-3000: backlog
   epic-1-retrospective: optional
