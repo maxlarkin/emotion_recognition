@@ -228,10 +228,11 @@ class _SourceState:
     def __init__(self, ema_alpha: float):
         self.tracker = IoUTracker()
         self.ema = TrackEMA(ema_alpha)
+        self.vad = VadStream()
+        self.window = SpeechWindow()
         self.audio_history: deque[AudioResult] = deque(maxlen=AUDIO_HISTORY)  # by window_end_ts
         self.weights: Optional[FusionWeights] = None  # this source's own; None -> Engine.weights
         self.audio_next_ts: Optional[float] = None  # media time where the previous chunk ended
-        self.reset_audio()
 
     def reset_audio(self) -> None:
         self.vad = VadStream()
@@ -318,7 +319,7 @@ class Engine:
                     produced.append(ErrorResult(r.source_id, "audio_failed", f"{type(exc).__name__}: {exc}"))
                 continue
             ms = (time.perf_counter() - t0) * 1000.0
-            for (r, _), p in zip(part, probs):
+            for (r, _), p in zip(part, probs, strict=True):
                 r.probs, r.label, r.ser_ms = to_dict(p), top_label(p), ms
 
         out: list[Union[AudioResult, ErrorResult]] = []
@@ -379,7 +380,7 @@ class Engine:
             audio = self.audio_for(st, fr.ts)
             audio_vec = from_dict(audio.probs) if audio is not None and audio.probs is not None else None
             faces = []
-            for k, (box, tid) in enumerate(zip(boxes, ids)):
+            for k, (box, tid) in enumerate(zip(boxes, ids, strict=True)):
                 face = st.ema.update(tid, probs[first + k])
                 fused = fuse(face, audio_vec, st.weights if st.weights is not None else self.weights)
                 label = top_label(fused)
@@ -432,10 +433,15 @@ def _apply_controls(engine: Engine, slots: SourceSlots, removed: set[str], contr
             _put(outq, ErrorResult(None, "bad_config", f"{type(exc).__name__}: {exc}"))
 
 
-def _gpu_name() -> str:
-    import torch
+def _gpu_name() -> Optional[str]:
+    """Shown in /api/health only: a failure here must not fail the worker start."""
+    try:
+        import torch
 
-    return torch.cuda.get_device_name(0)
+        return torch.cuda.get_device_name(0)
+    except Exception:  # noqa: BLE001
+        log.warning("cannot read the GPU name", exc_info=True)
+        return None
 
 
 def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
@@ -443,10 +449,10 @@ def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
     try:
         device = select_device(config.device, settings.variant)
         engine = Engine(settings, device, config)
-        gpu_name = _gpu_name() if device == "cuda" else None
     except Exception as exc:  # noqa: BLE001 - reported to the parent, which raises
         outq.put(("error", f"{type(exc).__name__}: {exc}"))
         return
+    gpu_name = _gpu_name() if device == "cuda" else None
     info = {"device": device, "gpu_name": gpu_name, "pid": os.getpid(), "ser_fp16": engine.ser.fp16}
     log.info("inference worker ready: %s", info)
     outq.put(("ready", info))
@@ -560,10 +566,10 @@ class InferenceWorker:
                 if not self._proc.is_alive():
                     code = self._proc.exitcode
                     self._kill()
-                    raise WorkerStartError(f"inference worker exited during start (code {code})")
+                    raise WorkerStartError(f"inference worker exited during start (code {code})") from None
                 if time.monotonic() > deadline:
                     self._kill()
-                    raise WorkerStartError(f"inference worker did not start within {timeout:.0f} s")
+                    raise WorkerStartError(f"inference worker did not start within {timeout:.0f} s") from None
         if kind == "error":
             self._kill()
             raise WorkerStartError(f"inference worker failed to start: {payload}")

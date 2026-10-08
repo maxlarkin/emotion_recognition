@@ -15,7 +15,7 @@ import logging
 import math
 import time
 from collections import OrderedDict
-from typing import Any, Optional
+from typing import Any, Callable, Concatenate, Optional, ParamSpec
 
 import anyio
 from fastapi import APIRouter, WebSocket
@@ -29,6 +29,8 @@ from sources.webcam import AudioPacket, BadMessage, WebcamFrame, decode_jpeg, pa
 log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+P = ParamSpec("P")
 
 MSG_NOT_STARTED = "Сессия не начата"
 MSG_ALREADY_STARTED = "Сессия уже начата"
@@ -55,16 +57,13 @@ def face_to_wire(face: FaceResult) -> dict:
     }
 
 
-def audio_to_wire(audio: Optional[AudioResult]) -> Optional[dict]:
-    """None when no window is attached. Speech: 7-key probs + label. Silence: 7 zeros, label None."""
-    if audio is None:
-        return None
-    speech = bool(audio.speech) and audio.probs is not None
-    probs = {k: float(audio.probs.get(k, 0.0)) for k in EMOTIONS} if speech else {k: 0.0 for k in EMOTIONS}
+def audio_to_wire(audio: AudioResult) -> dict:
+    """Speech: 7-key probs + label. Silence (or a skipped window without SER probs): 7 zeros, label None."""
+    probs = audio.probs if audio.speech else None
     return {
-        "speech": speech,
-        "probs": probs,
-        "label": audio.label if speech else None,
+        "speech": probs is not None,
+        "probs": {k: float(probs.get(k, 0.0)) if probs is not None else 0.0 for k in EMOTIONS},
+        "label": audio.label if probs is not None else None,
         "window_end_ts": audio.window_end_ts * 1000.0,
     }
 
@@ -100,7 +99,7 @@ def frame_result_to_wire(res: FrameResult, capture_ts: float, proc_ms: float) ->
         "capture_ts": capture_ts,
         "proc_ms": round(proc_ms, 2),
         "faces": [face_to_wire(f) for f in res.faces],
-        "audio": audio_to_wire(res.audio),
+        "audio": audio_to_wire(res.audio) if res.audio is not None else None,  # None: no window attached
     }
 
 
@@ -148,7 +147,7 @@ class LiveConnection:
         self.not_started_reported = False
         if sid is None:
             return
-        self._store_call("finish", sid)
+        self._store_call(SessionStore.finish, sid)
         if unregister and self.hub is not None:
             # Off the loop (may block on the worker queue) and shielded: if this task is being
             # cancelled, a cancelled to_thread() would drop the job before it starts.
@@ -157,14 +156,17 @@ class LiveConnection:
     def _reply(self, msg: dict) -> None:
         self.out.put_nowait(msg)
 
-    def _store_call(self, method: str, *args) -> None:
-        """Session store write (enqueued, non-blocking). A failure is logged; the session goes on."""
+    def _store_call(self, write: Callable[Concatenate[SessionStore, P], None], *args: P.args, **kwargs: P.kwargs) -> None:
+        """Session store write, e.g. `_store_call(SessionStore.finish, sid)` (enqueued, non-blocking).
+
+        A failure is logged; the session goes on.
+        """
         if self.store is None:
             return
         try:
-            getattr(self.store, method)(*args)
+            write(self.store, *args, **kwargs)
         except Exception as exc:  # noqa: BLE001
-            log.warning("session store %s failed: %s: %s", method, type(exc).__name__, exc)
+            log.warning("session store write failed: %s: %s", type(exc).__name__, exc)
 
     # ---- receive side
 
@@ -216,7 +218,7 @@ class LiveConnection:
                 self.fusion = None
         self.source_id = sid
         self.not_started_reported = False
-        self._store_call("create", sid, "live")
+        self._store_call(SessionStore.create, sid, "live")
         self._reply({"type": "session", "session_id": sid})
 
     async def _config(self, obj: dict) -> None:
@@ -297,12 +299,14 @@ class LiveConnection:
             elif isinstance(item, FrameResult):
                 if item.source_id == self.source_id:
                     wire = self._frame_result(item)
-                    self._store_call("record_frame", item.source_id, wire["frame_id"], wire["capture_ts"], wire["faces"], wire["audio"])
+                    self._store_call(
+                        SessionStore.record_frame, item.source_id, wire["frame_id"], wire["capture_ts"], wire["faces"], wire["audio"]
+                    )
                     await self._send(wire)
             elif isinstance(item, AudioResult):
                 # A window emitted on its own (not attached to a frame); skipped = no SER probs.
                 if item.source_id == self.source_id and not item.skipped:
-                    self._store_call("record_audio", item.source_id, audio_to_wire(item))
+                    self._store_call(SessionStore.record_audio, item.source_id, audio_to_wire(item))
             elif isinstance(item, ErrorResult):
                 if item.source_id == self.source_id:
                     log.warning("frame error for %s: %s %s", item.source_id, item.kind, item.message)

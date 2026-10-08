@@ -10,6 +10,8 @@ const MODEL_LABELS: Record<ModelKey, string> = {
   ser: "Эмоции по голосу (GigaAM-Emo)",
 };
 
+const MODEL_KEYS = Object.keys(MODEL_LABELS) as ModelKey[];
+
 const WARNINGS: Record<string, string> = {
   cuda_unavailable:
     "Образ собран для GPU, но видеокарта недоступна. Работа идёт на процессоре (CPU).",
@@ -71,7 +73,7 @@ export function HealthView({ health, stale }: { health: Health; stale: boolean }
   const missing =
     loading || health.warning === "inference_failed"
       ? []
-      : (Object.keys(MODEL_LABELS) as ModelKey[]).filter((k) => !health.models[k]);
+      : MODEL_KEYS.filter((k) => !health.models[k]);
   return (
     <>
       {stale && <p className="error">Связь с сервером потеряна, показаны последние данные.</p>}
@@ -96,7 +98,7 @@ export function HealthView({ health, stale }: { health: Health; stale: boolean }
       </p>
       <h3>Модели</h3>
       <ul className="models">
-        {(Object.keys(MODEL_LABELS) as ModelKey[]).map((k) => (
+        {MODEL_KEYS.map((k) => (
           <li key={k} className={health.models[k] ? "ok" : "error"}>
             <span aria-hidden="true">{health.models[k] ? "✓" : "✗"}</span> {MODEL_LABELS[k]}
             {!health.models[k] && (loading ? " — загружается" : " — не загружена")}

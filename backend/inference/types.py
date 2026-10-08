@@ -67,7 +67,7 @@ def ser_probs_to_emotions(probs: np.ndarray, labels: Sequence[str]) -> np.ndarra
 
 
 def to_dict(p: np.ndarray) -> dict[str, float]:
-    return {k: float(v) for k, v in zip(EMOTIONS, p)}
+    return {k: float(v) for k, v in zip(EMOTIONS, p, strict=True)}
 
 
 def from_dict(d: Mapping[str, float]) -> np.ndarray:

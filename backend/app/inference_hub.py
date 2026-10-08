@@ -16,11 +16,13 @@ import queue
 import threading
 import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 import numpy as np
 
 log = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 STARTING, READY, FAILED = "starting", "ready", "failed"
 
@@ -139,8 +141,8 @@ class InferenceHub:
                 self._worker = None
                 with self._lock:
                     routes, self._routes = list(self._routes.items()), {}
-                for sid, route in routes:
-                    self._deliver(route, WorkerGone(sid))
+                for gone_sid, gone_route in routes:
+                    self._deliver(gone_route, WorkerGone(gone_sid))
                 return
             except Exception:  # noqa: BLE001 - keep draining
                 log.exception("reading inference results failed")
@@ -192,12 +194,13 @@ class InferenceHub:
             except Exception as exc:  # noqa: BLE001 - worker gone: nothing to clean up
                 log.info("unregister %s: %s", source_id, exc)
 
-    def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
+    def _call(self, fn: Callable[[Any], T]) -> T:
+        """Run `fn(worker)`; a missing or stopped worker becomes HubUnavailable."""
         worker = self._worker
         if worker is None:
             raise HubUnavailable(self.state)
         try:
-            return getattr(worker, method)(*args, **kwargs)
+            return fn(worker)
         except (RuntimeError, OSError) as exc:  # worker not running / queue closed
             raise HubUnavailable(FAILED) from exc
 
@@ -206,14 +209,14 @@ class InferenceHub:
 
         Raises HubUnavailable if the worker is gone, KeyError if the source is not registered.
         """
-        return bool(self._call("submit_frame", source_id, bgr, frame_id=frame_id, ts=ts))
+        return bool(self._call(lambda w: w.submit_frame(source_id, bgr, frame_id=frame_id, ts=ts)))
 
     def submit_audio(self, source_id: str, pcm: bytes, ts: float) -> bool:
         """Thread-safe. PCM16 LE mono 16 kHz, `ts` in seconds (first sample, same clock as frames).
 
         False if the chunk was dropped (inbound queue full). Raises HubUnavailable if the worker is gone.
         """
-        return bool(self._call("submit_audio", source_id, pcm, ts=ts))
+        return bool(self._call(lambda w: w.submit_audio(source_id, pcm, ts=ts)))
 
     def set_fusion(self, source_id: str, w_face: float, w_audio: float) -> bool:
         """Fusion weights for this source only (validated by the caller). May block briefly.
@@ -221,7 +224,7 @@ class InferenceHub:
         False if the worker's inbound queue stayed full. Raises HubUnavailable if the worker is gone.
         """
         try:
-            self._call("set_fusion", w_face, w_audio, source_id=source_id)
+            self._call(lambda w: w.set_fusion(w_face, w_audio, source_id=source_id))
         except queue.Full:
             return False
         return True

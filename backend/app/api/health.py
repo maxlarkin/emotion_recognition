@@ -23,8 +23,9 @@ def model_presence(settings: Settings) -> dict[str, bool]:
 
 def build_health(settings: Settings, hub: Optional[InferenceHub]) -> dict:
     files = model_presence(settings)
-    ready = hub is not None and hub.state == READY
-    info = hub.info if ready else {}
+    state = hub.state if hub is not None else FAILED  # no hub: the lifespan did not start one
+    ready = state == READY
+    info = hub.info if hub is not None and ready else {}
     device = info.get("device") or "cpu"
     body: dict = {
         "status": "ok" if ready and all(files.values()) else "degraded",
@@ -33,7 +34,7 @@ def build_health(settings: Settings, hub: Optional[InferenceHub]) -> dict:
     }
     if info.get("gpu_name"):
         body["gpu_name"] = info["gpu_name"]
-    if hub is None or hub.state == FAILED:
+    if state == FAILED:
         body["warning"] = "inference_failed"
     elif not ready:
         body["warning"] = "models_loading"

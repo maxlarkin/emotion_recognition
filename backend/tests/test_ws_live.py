@@ -273,7 +273,6 @@ def test_silent_window_has_zero_probs_and_face_fusion(client, fake_worker):
 def test_audio_to_wire_skipped_speech_window_is_not_speech():
     wire = live_mod.audio_to_wire(AudioResult("s", True, None, None, 1.0, 0.8, skipped=True))
     assert wire == {"speech": False, "probs": {k: 0.0 for k in EMOTIONS}, "label": None, "window_end_ts": 1000.0}
-    assert live_mod.audio_to_wire(None) is None
 
 
 def test_no_audio_gives_null_and_face_fusion(client, fake_worker):
