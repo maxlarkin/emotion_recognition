@@ -92,6 +92,13 @@ context:
 - On a bad format, an unknown id still returns 404 (the id check runs first).
 - Reads `flush()` the writer queue first (up to 5 s), so they see what was written before them. Above 20 000 queued writes, new frame records are dropped and a warning is logged.
 - `pandas==3.0.6` is in `requirements-dev.txt` (test only, not in the image).
+- Verified on 2026-10-08, GPU stack:
+  - All three images build with `--network host`.
+  - `bench.live_ws`, 30 s at 8 fps with persistence on: p50 18 ms, p95 19.5 ms. Story 1.4 measured p95 45 ms in the browser, so there is no regression.
+  - Headless Chrome run with a fake camera and a fake mic (`speech.wav`). The «Сессии» card showed the new session as «идёт» and then «завершена» after «Стоп». «Голос» showed «нейтрально 82%» and «Итог» «радость 75%». No UI errors.
+  - Export: `pandas.read_csv` and `read_json` load the CSV and the JSON, (95, 20) each with the same columns. 86 face rows and 9 audio rows. The headers are `text/csv` plus `Content-Disposition: attachment`.
+  - In the CSV, `speech` reads as `object` when some face rows have no attached window (empty cells). The import still raises no error.
+  - After `docker compose --profile gpu down` and `up`, both sessions are still listed. A plain `docker compose down` keeps the GPU backend running, because `.env` sets the CPU profile.
 
 ## Spec Change Log
 
