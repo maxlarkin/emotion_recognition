@@ -34,6 +34,7 @@ def _default_factory() -> Any:
 # Replaced by tests (a fake worker); called once per hub start, in the start thread.
 WORKER_FACTORY: Callable[[], Any] = _default_factory
 
+
 @dataclass(frozen=True)
 class WorkerGone:
     """Put on a session queue when the worker process exits."""
@@ -54,8 +55,7 @@ class _Route:
 
 
 class InferenceHub:
-    def __init__(self, factory: Optional[Callable[[], Any]] = None):
-        self._factory = factory
+    def __init__(self) -> None:
         self.state = STARTING
         self.error: Optional[str] = None
         self._worker: Any = None
@@ -73,7 +73,7 @@ class InferenceHub:
 
     def _start_worker(self) -> None:
         try:
-            worker = (self._factory or WORKER_FACTORY)()
+            worker = WORKER_FACTORY()
             worker.start()
         except Exception as exc:  # noqa: BLE001 - reported through the state
             log.error("inference worker failed to start: %s", exc)
@@ -108,6 +108,12 @@ class InferenceHub:
                 log.exception("inference worker stop failed")
         with self._lock:
             self._routes.clear()
+
+    @property
+    def info(self) -> dict[str, Any]:
+        """What the running worker reported at start (device, gpu_name, ...); {} when none."""
+        worker = self._worker
+        return dict(getattr(worker, "info", {})) if worker is not None else {}
 
     def wait_ready(self, timeout: float) -> bool:
         """Test/bench helper: wait until the start thread finished (ready or failed)."""
@@ -186,44 +192,36 @@ class InferenceHub:
             except Exception as exc:  # noqa: BLE001 - worker gone: nothing to clean up
                 log.info("unregister %s: %s", source_id, exc)
 
-    def submit_frame(self, source_id: str, bgr: np.ndarray, frame_id: int, ts: float) -> bool:
-        """Thread-safe. False if the frame was dropped (inbound queue full).
-
-        Raises HubUnavailable if the worker is gone.
-        """
+    def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
         worker = self._worker
         if worker is None:
             raise HubUnavailable(self.state)
         try:
-            return bool(worker.submit_frame(source_id, bgr, frame_id=frame_id, ts=ts))
-        except (RuntimeError, ValueError, AttributeError, OSError) as exc:  # worker not running / queue closed
+            return getattr(worker, method)(*args, **kwargs)
+        except (RuntimeError, OSError) as exc:  # worker not running / queue closed
             raise HubUnavailable(FAILED) from exc
+
+    def submit_frame(self, source_id: str, bgr: np.ndarray, frame_id: int, ts: float) -> bool:
+        """Thread-safe. False if the frame was dropped (inbound queue full).
+
+        Raises HubUnavailable if the worker is gone, KeyError if the source is not registered.
+        """
+        return bool(self._call("submit_frame", source_id, bgr, frame_id=frame_id, ts=ts))
 
     def submit_audio(self, source_id: str, pcm: bytes, ts: float) -> bool:
         """Thread-safe. PCM16 LE mono 16 kHz, `ts` in seconds (first sample, same clock as frames).
 
         False if the chunk was dropped (inbound queue full). Raises HubUnavailable if the worker is gone.
         """
-        worker = self._worker
-        if worker is None:
-            raise HubUnavailable(self.state)
-        try:
-            return bool(worker.submit_audio(source_id, pcm, ts=ts))
-        except (RuntimeError, ValueError, AttributeError, OSError) as exc:  # worker not running / queue closed
-            raise HubUnavailable(FAILED) from exc
+        return bool(self._call("submit_audio", source_id, pcm, ts=ts))
 
     def set_fusion(self, source_id: str, w_face: float, w_audio: float) -> bool:
         """Fusion weights for this source only (validated by the caller). May block briefly.
 
         False if the worker's inbound queue stayed full. Raises HubUnavailable if the worker is gone.
         """
-        worker = self._worker
-        if worker is None:
-            raise HubUnavailable(self.state)
         try:
-            worker.set_fusion(w_face, w_audio, source_id=source_id)
-            return True
+            self._call("set_fusion", w_face, w_audio, source_id=source_id)
         except queue.Full:
             return False
-        except (RuntimeError, ValueError, AttributeError, OSError) as exc:  # worker not running / queue closed
-            raise HubUnavailable(FAILED) from exc
+        return True

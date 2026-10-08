@@ -26,7 +26,7 @@ export function largestFace(faces: readonly FaceResult[]): FaceResult | null {
 /** «Лицо»: facial emotion (after smoothing) of the largest face. */
 export function faceText(face: FaceResult | null): string {
   if (!face) return "лицо не найдено";
-  return `${EMOTION_RU[face.face_label] ?? face.face_label} ${pct(face.face?.[face.face_label] ?? 0)}`;
+  return `${EMOTION_RU[face.face_label]} ${pct(face.face[face.face_label])}`;
 }
 
 /** «Итог»: fused emotion of the largest face (same text as its overlay label). */

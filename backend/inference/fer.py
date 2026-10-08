@@ -11,7 +11,7 @@ from typing import Sequence
 
 import numpy as np
 
-from inference.types import FER_CLASSES, fer_probs_to_emotions, softmax
+from inference.types import EMOTIONS, FER_CLASSES, fer_probs_to_emotions, softmax
 
 IMG_SIZE = 224
 MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -90,6 +90,6 @@ class FacialEmotion:
     def predict(self, crops_rgb: Sequence[np.ndarray]) -> np.ndarray:
         """RGB crops -> [N, 7] probabilities in EMOTIONS order."""
         if not crops_rgb:
-            return np.zeros((0, 7), dtype=np.float64)
+            return np.zeros((0, len(EMOTIONS)), dtype=np.float64)
         batch = np.stack([preprocess_rgb(c) for c in crops_rgb])
         return fer_probs_to_emotions(softmax(self.logits(batch)))

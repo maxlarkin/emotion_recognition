@@ -130,14 +130,7 @@ class LiveConnection:
                 tg.start_soon(self._guard, self._send_loop, tg.cancel_scope)
                 tg.start_soon(self._guard, self._receive_loop, tg.cancel_scope)
         finally:
-            sid, self.source_id = self.source_id, None
-            if sid is not None:
-                self._store_call("finish", sid)
-            if sid is not None and self.hub is not None:
-                # Off the loop (may block on the worker queue) and shielded: if this task is being
-                # cancelled, a cancelled to_thread() would drop the job before it starts.
-                job = asyncio.get_running_loop().run_in_executor(None, self.hub.unregister, sid)
-                await asyncio.shield(job)
+            await self._end_session()
 
     @staticmethod
     async def _guard(fn, scope: anyio.CancelScope) -> None:
@@ -147,6 +140,19 @@ class LiveConnection:
             log.info("live connection ended: %s: %s", type(exc).__name__, exc)
         finally:
             scope.cancel()
+
+    async def _end_session(self, unregister: bool = True) -> None:
+        """Finish the current session (if any): store record, then the worker source."""
+        sid, self.source_id = self.source_id, None
+        self.pending.clear()
+        self.not_started_reported = False
+        if sid is None:
+            return
+        self._store_call("finish", sid)
+        if unregister and self.hub is not None:
+            # Off the loop (may block on the worker queue) and shielded: if this task is being
+            # cancelled, a cancelled to_thread() would drop the job before it starts.
+            await asyncio.shield(self.loop.run_in_executor(None, self.hub.unregister, sid))
 
     def _reply(self, msg: dict) -> None:
         self.out.put_nowait(msg)
@@ -186,14 +192,8 @@ class LiveConnection:
         elif kind == "start":
             await self._start()
         elif kind == "stop":
-            sid, self.source_id = self.source_id, None
-            self.pending.clear()
-            self.not_started_reported = False
             self.fusion = None  # weights belong to the stopped session
-            if sid is not None:
-                self._store_call("finish", sid)
-            if sid is not None and self.hub is not None:
-                await asyncio.to_thread(self.hub.unregister, sid)
+            await self._end_session()
         elif kind == "config":
             await self._config(obj)
         else:
@@ -310,8 +310,7 @@ class LiveConnection:
                         await self._send(error_msg(MSG_FRAME_FAILED))
             elif isinstance(item, WorkerGone):
                 if item.source_id == self.source_id:
-                    self.source_id = None  # the worker is gone: nothing to unregister
-                    self._store_call("finish", item.source_id)
+                    await self._end_session(unregister=False)  # the worker is gone: nothing to unregister
                     await self._send(error_msg(MSG_WORKER_DIED))
                     if self.ws.application_state == WebSocketState.CONNECTED:
                         await self.ws.close(code=1011)

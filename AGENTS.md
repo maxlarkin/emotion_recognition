@@ -109,6 +109,7 @@ docker compose up -d && docker compose logs -f backend   # в фоне + лог�
 docker compose ps                             # должен работать ровно один бэкенд
 ./scripts/check-compose.sh                    # то же по конфигурации: CPU и GPU профили дают ровно по одному бэкенду
 docker compose down                           # остановить (volume data сохраняется)
+docker compose --profile cpu --profile gpu down  # остановить оба профиля; делать перед сменой профиля
 docker compose down -v                        # остановить и удалить данные (sessions, uploads)
 ```
 
@@ -131,6 +132,14 @@ cd backend && .venv/bin/pytest -q
 ```
 
 Тесты не входят в образ. Код, зависящий от моделей (stories 1.2+), прогоняйте в полном окружении: `uv pip install --python backend/.venv -r backend/requirements-cpu.txt && uv pip install --python backend/.venv --no-deps -r backend/requirements-nodeps.txt`.
+
+Тесты с моделями (`-m models`) требуют весов в `MODELS_DIR` и около 3 ГБ RAM: один набор моделей занимает примерно 2 ГБ. Запускайте их с жёстким лимитом памяти, иначе при нехватке RAM система уходит в swap и зависает, а OOM killer не срабатывает:
+
+```bash
+cd backend && MODELS_DIR=$(realpath ../.models) systemd-run --user --scope -p MemoryMax=5G -p MemorySwapMax=0 -- .venv/bin/pytest -q -m models
+```
+
+Перед запуском проверьте `docker ps`: работающий бэкенд держит ещё около 2 ГБ.
 
 ### Фронтенд
 

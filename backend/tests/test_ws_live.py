@@ -13,7 +13,6 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.api import health as health_mod
 from app.config import MODEL_FILES
 from app.ws import live as live_mod
 from inference.types import EMOTIONS, AudioResult, from_dict, renormalise, to_dict
@@ -60,13 +59,11 @@ def client(monkeypatch, tmp_path: Path):
         monkeypatch.setenv("MODELS_DIR", str(root))
         monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
         monkeypatch.setenv("APP_VARIANT", "cpu")
-        health_mod._cached_device.cache_clear()
         from app.main import app
 
         return TestClient(app)
 
     yield _make
-    health_mod._cached_device.cache_clear()
 
 
 def ready(c: TestClient) -> TestClient:

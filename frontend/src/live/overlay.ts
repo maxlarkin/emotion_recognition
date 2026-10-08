@@ -48,10 +48,9 @@ export function scaleBox(box: readonly number[], jpegW: number, jpegH: number, s
 /** "радость 81%" */
 export function faceLabel(face: Pick<FaceResult, "fused_label" | "confidence">): string {
   const pct = Math.round(Math.min(1, Math.max(0, face.confidence)) * 100);
-  return `${EMOTION_RU[face.fused_label] ?? face.fused_label} ${pct}%`;
+  return `${EMOTION_RU[face.fused_label]} ${pct}%`;
 }
 
-/** Clears the canvas (CSS-pixel coordinates, already scaled for devicePixelRatio) and draws faces. */
 /** No result for this long: the overlay (and panel) is stale and gets cleared. */
 export const STALE_MS = 1000;
 
@@ -59,6 +58,7 @@ export function isStale(lastResultAt: number, now: number, staleMs: number = STA
   return now - lastResultAt > staleMs;
 }
 
+/** Clears the canvas (CSS-pixel coordinates, already scaled for devicePixelRatio) and draws faces. */
 export function drawOverlay(
   ctx: CanvasRenderingContext2D,
   cssW: number,
@@ -74,7 +74,7 @@ export function drawOverlay(
   ctx.textBaseline = "bottom";
   for (const face of faces) {
     const r = scaleBox(face.box, jpegW, jpegH, shown);
-    const color = EMOTION_COLOR[face.fused_label] ?? "#ffffff";
+    const color = EMOTION_COLOR[face.fused_label];
     ctx.strokeStyle = color;
     ctx.strokeRect(r.x, r.y, r.w, r.h);
     const text = faceLabel(face);

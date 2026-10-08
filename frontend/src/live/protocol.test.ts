@@ -5,10 +5,10 @@ import {
   encodeAudio,
   encodeFrame,
   encodeFrameHeader,
-  HEADER_BYTES,
   parseAudio,
   parseServerMessage,
   type FrameResult,
+  VIDEO_HEADER_BYTES,
 } from "./protocol";
 
 describe("encodeFrameHeader", () => {
@@ -20,25 +20,26 @@ describe("encodeFrameHeader", () => {
   it("round-trips a realistic timestamp and the full u32 range", () => {
     const h = encodeFrameHeader(1727780000123.4, 4_000_000_000);
     const v = new DataView(h.buffer);
-    expect(h.byteLength).toBe(HEADER_BYTES);
+    expect(h.byteLength).toBe(VIDEO_HEADER_BYTES);
     expect(v.getFloat64(1, true)).toBe(1727780000123.4);
     expect(v.getUint32(9, true)).toBe(4_000_000_000);
   });
 
   it("appends the JPEG bytes", () => {
     const msg = encodeFrame(2, 7, new Uint8Array([0xff, 0xd8, 0xff]).buffer);
-    expect(msg.byteLength).toBe(HEADER_BYTES + 3);
-    expect(Array.from(msg.slice(HEADER_BYTES))).toEqual([0xff, 0xd8, 0xff]);
+    expect(msg.byteLength).toBe(VIDEO_HEADER_BYTES + 3);
+    expect(Array.from(msg.slice(VIDEO_HEADER_BYTES))).toEqual([0xff, 0xd8, 0xff]);
   });
 });
 
 describe("parseServerMessage", () => {
+  const probs = { anger: 0, disgust: 0, fear: 0, happiness: 0.81, sadness: 0, surprise: 0, neutral: 0.19 };
   const face = {
     track_id: 1,
     box: [10, 20, 30, 40],
-    face: {},
+    face: probs,
     face_label: "happiness",
-    fused: {},
+    fused: probs,
     fused_label: "happiness",
     confidence: 0.81,
   };
@@ -59,6 +60,10 @@ describe("parseServerMessage", () => {
     expect(parseServerMessage("{oops")).toBeNull();
     expect(parseServerMessage('{"type":"other"}')).toBeNull();
     expect(parseServerMessage('{"type":"frame_result","frame_id":1,"capture_ts":1,"faces":[{"box":[1,2]}]}')).toBeNull();
+    const frame = (f: object) => JSON.stringify({ type: "frame_result", frame_id: 1, capture_ts: 1, faces: [f], audio: null });
+    expect(parseServerMessage(frame({ ...face, face: { anger: 1 } }))).toBeNull(); // probs missing keys
+    expect(parseServerMessage(frame({ ...face, face_label: "joy" }))).toBeNull();
+    expect(parseServerMessage(frame({ ...face, track_id: "1" }))).toBeNull();
   });
 });
 

@@ -46,8 +46,9 @@ class SpeechWindow:
         self._since_emit += chunk.shape[0]
         if self._total < self.window_len or self._since_emit < self.hop_len:
             return None
-        # Keep the average hop exact although chunks are 512 samples.
-        self._since_emit = 0 if self._total == self._since_emit else self._since_emit - self.hop_len
+        first = self._since_emit == self._total  # first full window: the hop count starts here
+        # Later windows carry the overshoot over, so the average hop stays exact with 512-sample chunks.
+        self._since_emit = 0 if first else self._since_emit - self.hop_len
         samples = np.concatenate(list(self._chunks))[-self.window_len :]
         return Window(samples=samples, speech_ratio=float(np.mean(self._flags)), end_ts=end_ts)
 

@@ -5,14 +5,16 @@ export type Emotion = (typeof EMOTIONS)[number];
 export type Probs = Record<Emotion, number>;
 
 export const VIDEO_FRAME = 0x01;
-export const HEADER_BYTES = 13;
+export const VIDEO_HEADER_BYTES = 13;
 export const AUDIO_CHUNK = 0x02;
 export const AUDIO_HEADER_BYTES = 9;
 export const AUDIO_RATE = 16000;
+/** Server default fusion weights (backend inference/fusion.py W_FACE / W_AUDIO). */
+export const DEFAULT_FUSION = { w_face: 0.7, w_audio: 0.3 } as const;
 
 /** 0x01 | f64 capture_ts (ms) | u32 frame_id */
 export function encodeFrameHeader(captureTs: number, frameId: number): Uint8Array<ArrayBuffer> {
-  const buf = new ArrayBuffer(HEADER_BYTES);
+  const buf = new ArrayBuffer(VIDEO_HEADER_BYTES);
   const view = new DataView(buf);
   view.setUint8(0, VIDEO_FRAME);
   view.setFloat64(1, captureTs, true);
@@ -23,9 +25,9 @@ export function encodeFrameHeader(captureTs: number, frameId: number): Uint8Arra
 /** Header + JPEG bytes as one binary message. */
 export function encodeFrame(captureTs: number, frameId: number, jpeg: ArrayBuffer | Uint8Array): Uint8Array<ArrayBuffer> {
   const body = jpeg instanceof Uint8Array ? jpeg : new Uint8Array(jpeg);
-  const out = new Uint8Array(HEADER_BYTES + body.byteLength);
+  const out = new Uint8Array(VIDEO_HEADER_BYTES + body.byteLength);
   out.set(encodeFrameHeader(captureTs, frameId), 0);
-  out.set(body, HEADER_BYTES);
+  out.set(body, VIDEO_HEADER_BYTES);
   return out;
 }
 
@@ -79,13 +81,21 @@ function isEmotion(v: unknown): v is Emotion {
   return typeof v === "string" && (EMOTIONS as readonly string[]).includes(v);
 }
 
+function isProbs(v: unknown): v is Probs {
+  return isObj(v) && EMOTIONS.every((k) => typeof v[k] === "number" && Number.isFinite(v[k]));
+}
+
 function isFace(v: unknown): v is FaceResult {
   if (!isObj(v)) return false;
   const box = v.box;
   return (
+    typeof v.track_id === "number" &&
     Array.isArray(box) &&
     box.length === 4 &&
     box.every((n) => typeof n === "number" && Number.isFinite(n)) &&
+    isProbs(v.face) &&
+    isEmotion(v.face_label) &&
+    isProbs(v.fused) &&
     isEmotion(v.fused_label) &&
     typeof v.confidence === "number"
   );
@@ -93,13 +103,12 @@ function isFace(v: unknown): v is FaceResult {
 
 /** The `audio` block of a frame_result; null if absent or malformed (the frame itself is still used). */
 export function parseAudio(v: unknown): AudioBlock | null {
-  if (!isObj(v) || typeof v.speech !== "boolean" || !isObj(v.probs)) return null;
+  if (!isObj(v) || typeof v.speech !== "boolean" || !isProbs(v.probs)) return null;
   if (typeof v.window_end_ts !== "number" || !Number.isFinite(v.window_end_ts)) return null;
   const raw = v.probs;
-  if (!EMOTIONS.every((k) => typeof raw[k] === "number" && Number.isFinite(raw[k]))) return null;
   const label = v.label === null || v.label === undefined ? null : isEmotion(v.label) ? v.label : undefined;
   if (label === undefined || (v.speech && label === null)) return null;
-  const probs = Object.fromEntries(EMOTIONS.map((k) => [k, raw[k] as number])) as Probs;
+  const probs = Object.fromEntries(EMOTIONS.map((k) => [k, raw[k]])) as Probs;
   return {
     speech: v.speech,
     probs,

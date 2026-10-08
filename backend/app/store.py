@@ -17,7 +17,6 @@ import queue
 import sqlite3
 import threading
 import time
-from collections import Counter
 from concurrent.futures import Future
 from contextlib import contextmanager
 from pathlib import Path
@@ -29,7 +28,6 @@ log = logging.getLogger(__name__)
 
 RUNNING = "running"
 FINISHED = "finished"
-KINDS = ("live", "file", "rtsp")
 
 BATCH_MAX = 500  # queued operations per commit
 QUEUE_MAX_FRAMES = 20_000  # queued writes beyond which new frame records are dropped (writer far behind)
@@ -97,13 +95,15 @@ def _connect(path: Path) -> sqlite3.Connection:
 
 
 class SessionStore:
+    _COLS = "id, kind, stream_id, status, created_at, updated_at, finished_at"
+
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self._wconn = _connect(self.path)
         self._wconn.execute("PRAGMA journal_mode = WAL")
         self._wconn.execute("PRAGMA synchronous = NORMAL")
         self._wconn.executescript(SCHEMA)
-        n = self.finish_stale()
+        n = self._finish_stale()
         if n:
             log.info("marked %d stale running session(s) as finished", n)
         self._rconn = _connect(self.path)
@@ -116,7 +116,7 @@ class SessionStore:
 
     # ------------------------------------------------------------------ lifecycle
 
-    def finish_stale(self) -> int:
+    def _finish_stale(self) -> int:
         """Sessions left `running` by a previous process become `finished` (called at open)."""
         cur = self._wconn.execute(
             "UPDATE sessions SET status = ?, finished_at = COALESCE(finished_at, updated_at) WHERE status = ?",
@@ -303,8 +303,6 @@ class SessionStore:
             "status": status,
         }
 
-    _COLS = "id, kind, stream_id, status, created_at, updated_at, finished_at"
-
     def list(self) -> list[dict]:
         rows = self._read(f"SELECT {self._COLS} FROM sessions ORDER BY created_at DESC")
         return [self._info(r) for r in rows]
@@ -322,25 +320,29 @@ class SessionStore:
         info = self.get(session_id)
         if info is None:
             return None
-        fused: Counter = Counter()
-        tracks: set = set()
-        n_faces = 0
-        for (faces_json,) in self._read("SELECT faces FROM frames WHERE session_id = ?", (session_id,)):
-            for f in json.loads(faces_json):
-                n_faces += 1
-                fused[f.get("fused_label")] += 1
-                tracks.add(f.get("track_id"))
+        # Counted in SQLite (json_each over each frame's face list), not by parsing every frame here.
+        fused = self._read(
+            "SELECT json_extract(f.value, '$.fused_label') AS label, COUNT(*) AS n "
+            "FROM frames, json_each(frames.faces) AS f WHERE frames.session_id = ? "
+            "GROUP BY label ORDER BY n DESC, label LIMIT 1",
+            (session_id,),
+        )
+        n_faces, n_tracks = self._read(
+            "SELECT COUNT(*), COUNT(DISTINCT json_extract(f.value, '$.track_id')) "
+            "FROM frames, json_each(frames.faces) AS f WHERE frames.session_id = ?",
+            (session_id,),
+        )[0]
         n_win, n_speech = self._read(
             "SELECT COUNT(*), COALESCE(SUM(speech), 0) FROM audio_windows WHERE session_id = ?", (session_id,)
         )[0]
-        dominant, count = fused.most_common(1)[0] if n_faces else (None, 0)
+        dominant, count = fused[0] if n_faces else (None, 0)
         return {
             **info,
             "progress": 1.0 if info["status"] == FINISHED else None,
             "summary": {
                 "dominant_emotion": dominant,
                 "dominant_share": count / n_faces if n_faces else None,
-                "faces_seen": len(tracks),
+                "faces_seen": n_tracks,
                 "speech_share": n_speech / n_win if n_win else None,
             },
         }

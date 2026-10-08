@@ -58,14 +58,6 @@ export class Resampler {
     this.base = -(this.taps.length - 1);
   }
 
-  /** Clears the history (e.g. after the mic was muted), as if newly created. */
-  reset(): void {
-    this.buf.fill(0);
-    this.len = this.taps.length - 1;
-    this.base = -(this.taps.length - 1);
-    this.outCount = 0;
-  }
-
   private fir(abs: number): number {
     const { taps, buf } = this;
     const end = abs - this.base; // index of x[abs] in buf
@@ -140,10 +132,5 @@ export class ChunkAccumulator {
       }
     }
     return out;
-  }
-
-  /** Drops the partial chunk. */
-  reset(): void {
-    this.fill = 0;
   }
 }

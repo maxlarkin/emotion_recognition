@@ -9,15 +9,29 @@ export interface Health {
 }
 
 const HEALTH_TIMEOUT_MS = 4000;
+const SESSIONS_TIMEOUT_MS = 8000;
+
+async function errorText(res: Response): Promise<string> {
+  try {
+    const body: unknown = await res.json();
+    const detail = (body as { detail?: unknown } | null)?.detail;
+    if (typeof detail === "string") return detail;
+  } catch {
+    // not JSON
+  }
+  return `HTTP ${res.status}`;
+}
+
+/** GET a JSON body; aborted by `signal` or after `timeoutMs`. Errors carry the server's `detail`. */
+async function getJson(url: string, timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const res = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout, cache: "no-store" });
+  if (!res.ok) throw new Error(await errorText(res));
+  return res.json();
+}
 
 export async function fetchHealth(signal?: AbortSignal): Promise<Health> {
-  const timeout = AbortSignal.timeout(HEALTH_TIMEOUT_MS);
-  const res = await fetch("/api/health", {
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body: unknown = await res.json();
+  const body = await getJson("/api/health", HEALTH_TIMEOUT_MS, signal);
   const models = (body as { models?: unknown } | null)?.models;
   if (typeof models !== "object" || models === null || Array.isArray(models)) {
     throw new Error("некорректный ответ сервера");
@@ -37,27 +51,8 @@ export interface SessionInfo {
   status: string;
 }
 
-const SESSIONS_TIMEOUT_MS = 8000;
-
-async function errorText(res: Response): Promise<string> {
-  try {
-    const body: unknown = await res.json();
-    const detail = (body as { detail?: unknown } | null)?.detail;
-    if (typeof detail === "string") return detail;
-  } catch {
-    // not JSON
-  }
-  return `HTTP ${res.status}`;
-}
-
 export async function fetchSessions(signal?: AbortSignal): Promise<SessionInfo[]> {
-  const timeout = AbortSignal.timeout(SESSIONS_TIMEOUT_MS);
-  const res = await fetch("/api/sessions", {
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(await errorText(res));
-  const body: unknown = await res.json();
+  const body = await getJson("/api/sessions", SESSIONS_TIMEOUT_MS, signal);
   if (!Array.isArray(body) || !body.every((s) => typeof s?.id === "string" && typeof s?.created_at === "number")) {
     throw new Error("некорректный ответ сервера");
   }

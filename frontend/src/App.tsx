@@ -13,6 +13,9 @@ const MODEL_LABELS: Record<ModelKey, string> = {
 const WARNINGS: Record<string, string> = {
   cuda_unavailable:
     "Образ собран для GPU, но видеокарта недоступна. Работа идёт на процессоре (CPU).",
+  models_loading: "Модели загружаются. Анализ станет доступен через несколько секунд.",
+  inference_failed:
+    "Модуль распознавания не запустился. Подробности в журнале бэкенда; если не хватает файлов моделей, пересоберите образ.",
 };
 
 const UNKNOWN_WARNING = "Сервер сообщил о проблеме. Подробности смотрите в журнале бэкенда.";
@@ -63,12 +66,17 @@ export default function App() {
 }
 
 export function HealthView({ health, stale }: { health: Health; stale: boolean }) {
-  const missing = (Object.keys(MODEL_LABELS) as ModelKey[]).filter((k) => !health.models[k]);
+  const loading = health.warning === "models_loading";
+  // While loading or after a failed start every model is false: the warning explains why, not missing files.
+  const missing =
+    loading || health.warning === "inference_failed"
+      ? []
+      : (Object.keys(MODEL_LABELS) as ModelKey[]).filter((k) => !health.models[k]);
   return (
     <>
       {stale && <p className="error">Связь с сервером потеряна, показаны последние данные.</p>}
       <p>
-        Устройство: <strong>{health.device === "cuda" ? "GPU (CUDA)" : "CPU"}</strong>
+        Устройство: <strong>{loading ? "определяется…" : health.device === "cuda" ? "GPU (CUDA)" : "CPU"}</strong>
       </p>
       {health.gpu_name && (
         <p>
@@ -91,7 +99,7 @@ export function HealthView({ health, stale }: { health: Health; stale: boolean }
         {(Object.keys(MODEL_LABELS) as ModelKey[]).map((k) => (
           <li key={k} className={health.models[k] ? "ok" : "error"}>
             <span aria-hidden="true">{health.models[k] ? "✓" : "✗"}</span> {MODEL_LABELS[k]}
-            {!health.models[k] && " — файл отсутствует"}
+            {!health.models[k] && (loading ? " — загружается" : " — не загружена")}
           </li>
         ))}
       </ul>

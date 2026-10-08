@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.health import _cached_device, router as health_router
+from app.api.health import router as health_router
 from app.api.sessions import router as sessions_router
 from app.config import get_settings
 from app.inference_hub import InferenceHub
@@ -23,8 +23,7 @@ log = logging.getLogger("app")
 async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    info = _cached_device(settings.variant)  # probe once at startup, not per request
-    log.info("variant=%s device=%s gpu=%s warning=%s", settings.variant, info.device, info.gpu_name, info.warning)
+    log.info("variant=%s", settings.variant)
     # Session store (CAP-4). A store that cannot open is logged; live analysis works without it.
     try:
         app.state.store = SessionStore(settings.data_dir / "app.db")
@@ -32,7 +31,7 @@ async def lifespan(app: FastAPI):
         log.exception("session store unavailable")
         app.state.store = None
     # One inference worker per backend process. Models load in a background thread so the API
-    # (health, UI) is reachable meanwhile; /ws/live answers "loading" until the hub is ready.
+    # (health, UI) is reachable meanwhile; health and /ws/live report "loading" until the hub is ready.
     hub = InferenceHub()
     app.state.hub = hub
     hub.start()

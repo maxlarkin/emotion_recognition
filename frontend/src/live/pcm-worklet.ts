@@ -1,6 +1,7 @@
 // AudioWorklet: microphone at the device's native rate -> mono -> low-pass + decimate to 16 kHz ->
 // PCM16, posted to the main thread in 500 ms chunks (8000 samples, transferred ArrayBuffer).
-// The main thread stamps each chunk on arrival (see mic.ts). Message "reset" drops buffered audio.
+// The main thread stamps each chunk on arrival (see mic.ts). Muting closes the whole AudioContext,
+// so a processor never has to drop buffered audio.
 // Bundled by Vite (`?worker&url`), so it ships with the app and needs no network.
 import { ChunkAccumulator, Resampler, TARGET_RATE, toInt16 } from "./resample";
 
@@ -11,22 +12,12 @@ declare class AudioWorkletProcessor {
   readonly port: MessagePort;
 }
 
-export const CHUNK_SAMPLES = TARGET_RATE / 2; // 500 ms
+const CHUNK_SAMPLES = TARGET_RATE / 2; // 500 ms
 
 class PcmProcessor extends AudioWorkletProcessor {
   private rs = new Resampler(sampleRate, TARGET_RATE);
   private chunks = new ChunkAccumulator(CHUNK_SAMPLES);
   private mono = new Float32Array(128);
-
-  constructor() {
-    super();
-    this.port.onmessage = (ev: MessageEvent) => {
-      if (ev.data === "reset") {
-        this.rs.reset();
-        this.chunks.reset();
-      }
-    };
-  }
 
   process(inputs: Float32Array[][]): boolean {
     const chans = inputs[0];

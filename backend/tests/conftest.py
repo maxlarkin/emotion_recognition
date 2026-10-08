@@ -174,3 +174,22 @@ def fake_worker(request, monkeypatch) -> Optional[FakeWorker]:
     yield fake
     if fake.start_gate is not None:
         fake.start_gate.set()  # release an abandoned start thread
+
+
+@pytest.fixture(autouse=True, scope="module")
+def release_memory_between_model_modules(request):
+    """Before each `models` module: hand memory freed by the previous one back to the OS.
+
+    A model module loads about 2 GB (or spawns a worker that does). glibc keeps freed heap
+    in this process, so without this the next module's worker process stacks on top of it.
+    """
+    if request.node.get_closest_marker("models"):
+        import ctypes
+        import gc
+
+        gc.collect()
+        try:
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except OSError:  # not glibc
+            pass
+    yield

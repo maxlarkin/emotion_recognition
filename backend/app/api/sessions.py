@@ -7,7 +7,7 @@ import concurrent.futures
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.export import to_csv, to_json
 from app.store import SessionRunning, SessionStore
@@ -19,7 +19,8 @@ MSG_RUNNING = "Сессия ещё идёт"
 MSG_BAD_FORMAT = "Неизвестный формат выгрузки: допустимы csv и json"
 MSG_NO_STORE = "Хранилище сессий недоступно, подробности в журнале сервера"
 
-# Store closed (shutdown), writer too slow, or SQLite failing: reported as 503, not an English 500.
+# Store closed (shutdown), delete timed out on a busy writer, or SQLite failing: 503, not an English 500.
+# (A read after a slow flush is not an error: flush() gives up and the read returns what is committed.)
 STORE_ERRORS = (TimeoutError, concurrent.futures.TimeoutError, RuntimeError, sqlite3.Error)
 
 
@@ -59,9 +60,9 @@ async def get_session(session_id: str, request: Request) -> dict:
 
 
 @router.get("/{session_id}/export")
-async def export_session(session_id: str, request: Request, format: str = "csv") -> Response:
+async def export_session(session_id: str, request: Request, fmt: str = Query("csv", alias="format")) -> Response:
     store = _store(request)
-    fmt = format.strip().lower()
+    fmt = fmt.strip().lower()
     if fmt not in ("csv", "json"):
         # An unknown id is reported as such whatever the format.
         if await _fresh(store, store.get, session_id) is None:
@@ -81,17 +82,10 @@ async def export_session(session_id: str, request: Request, format: str = "csv")
 @router.delete("/{session_id}", status_code=204)
 async def delete_session(session_id: str, request: Request) -> Response:
     store = _store(request)
-
-    def job() -> bool:
-        store.flush()
-        return store.delete(session_id)
-
     try:
-        found = await asyncio.to_thread(job)
+        found = await _fresh(store, store.delete, session_id)
     except SessionRunning:
         raise HTTPException(409, MSG_RUNNING) from None
-    except STORE_ERRORS:
-        raise HTTPException(503, MSG_NO_STORE) from None
     if not found:
         raise HTTPException(404, MSG_NOT_FOUND)
     return Response(status_code=204)

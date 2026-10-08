@@ -434,3 +434,26 @@ def test_controls_remove_before_config_and_report_bad_weights():
     assert eng.calls == [("remove", "s"), ("fusion", "s", 0.2, 0.8)]
     err = outq.get_nowait()
     assert (err.source_id, err.kind) == (None, "bad_config")
+
+
+class _ClosedQueue:
+    def put_nowait(self, item):
+        raise ValueError("Queue <multiprocessing.queues.Queue object> is closed")
+
+
+class _AliveProc:
+    def is_alive(self) -> bool:
+        return True
+
+
+def test_submit_after_concurrent_stop_raises_runtime_error():
+    """A stop() racing with submit_*: a cleared or closed queue is 'not running', not AttributeError/ValueError."""
+    w = InferenceWorker()
+    w._sources.add("s")
+    w._proc = _AliveProc()
+    w._inq = None  # stop() already cleared it
+    with pytest.raises(RuntimeError, match="not running"):
+        w.submit_audio("s", b"\x00\x00")
+    w._inq = _ClosedQueue()  # stop() closed it, not yet cleared
+    with pytest.raises(RuntimeError, match="not running"):
+        w.submit_frame("s", np.zeros((4, 4, 3), dtype=np.uint8), frame_id=1)

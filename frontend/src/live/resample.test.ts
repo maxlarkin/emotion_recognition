@@ -56,15 +56,6 @@ describe("Resampler", () => {
       expect(peak).toBeLessThan(0.5 * 0.01);
     });
   }
-
-  it("reset clears the history", () => {
-    const rs = new Resampler(48000);
-    run(rs, tone(1000, 48000, 0.1));
-    rs.reset();
-    const y = run(rs, new Float32Array(4800));
-    expect(y.length).toBeGreaterThan(1500);
-    expect(Math.max(...y.map(Math.abs))).toBe(0);
-  });
 });
 
 describe("toInt16", () => {
@@ -98,14 +89,5 @@ describe("ChunkAccumulator", () => {
 
   it("one push can complete several chunks", () => {
     expect(new ChunkAccumulator(3).push(Int16Array.of(1, 2, 3, 4, 5, 6, 7)).length).toBe(2);
-  });
-
-  it("reset empties the partial chunk", () => {
-    const acc = new ChunkAccumulator(4);
-    acc.push(Int16Array.of(9, 9, 9));
-    acc.reset();
-    expect(acc.pending).toBe(0);
-    const [c] = acc.push(Int16Array.of(1, 2, 3, 4));
-    expect(Array.from(new Int16Array(c))).toEqual([1, 2, 3, 4]);
   });
 });

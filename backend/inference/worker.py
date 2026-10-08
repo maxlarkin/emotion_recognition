@@ -24,25 +24,30 @@ import queue
 import threading
 import time
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Optional, Union
 
 import numpy as np
 
 from app.config import MODEL_FILES, Settings, get_settings
-from inference.fer import CUDA_BATCH
-from inference.fusion import EMA_ALPHA, W_AUDIO, W_FACE
-from inference.ser import MIN_SPEECH_RATIO
+from inference.detector import FaceDetector
+from inference.fer import CUDA_BATCH, FacialEmotion, crop_rgb
+from inference.fusion import EMA_ALPHA, W_AUDIO, W_FACE, FusionWeights, TrackEMA, fuse
+from inference.ser import MIN_SPEECH_RATIO, SpeechEmotion, SpeechWindow, Window
+from inference.tracker import IoUTracker
 from inference.types import (
+    SAMPLE_RATE,
     AudioChunk,
     AudioResult,
     ErrorResult,
     FaceResult,
     FrameResult,
     VideoFrame,
+    from_dict,
     to_dict,
     top_label,
 )
+from inference.vad import SileroVAD, VadStream
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +85,7 @@ class WorkerConfig:
 
 
 def cuda_usable() -> bool:
-    """Same rule as app.api.health.probe_cuda: torch sees a GPU and ORT has the CUDA EP."""
+    """Torch sees a GPU and ORT has the CUDA EP."""
     import onnxruntime
     import torch
 
@@ -221,23 +226,14 @@ class SourceSlots:
 
 class _SourceState:
     def __init__(self, ema_alpha: float):
-        from inference.fusion import TrackEMA
-        from inference.ser import SpeechWindow
-        from inference.tracker import IoUTracker
-        from inference.vad import VadStream
-
         self.tracker = IoUTracker()
         self.ema = TrackEMA(ema_alpha)
-        self.vad = VadStream()
-        self.window = SpeechWindow()
         self.audio_history: deque[AudioResult] = deque(maxlen=AUDIO_HISTORY)  # by window_end_ts
-        self.weights: Optional[Any] = None  # FusionWeights of this source; None -> Engine.weights
+        self.weights: Optional[FusionWeights] = None  # this source's own; None -> Engine.weights
         self.audio_next_ts: Optional[float] = None  # media time where the previous chunk ended
+        self.reset_audio()
 
     def reset_audio(self) -> None:
-        from inference.ser import SpeechWindow
-        from inference.vad import VadStream
-
         self.vad = VadStream()
         self.window = SpeechWindow()
 
@@ -246,12 +242,6 @@ class Engine:
     """All models plus per-source state. Lives in the worker process (or a bench/test process)."""
 
     def __init__(self, settings: Settings, device: str, config: WorkerConfig):
-        from inference.detector import FaceDetector
-        from inference.fer import FacialEmotion
-        from inference.fusion import FusionWeights
-        from inference.ser import SpeechEmotion
-        from inference.vad import SileroVAD
-
         check_model_files(settings)
         self.device = device
         self.config = config
@@ -273,8 +263,6 @@ class Engine:
 
     def set_fusion(self, w_face: float, w_audio: float, source_id: Optional[str] = None) -> None:
         """Without source_id: the default weights (sources without their own). With it: that source only."""
-        from inference.fusion import FusionWeights
-
         weights = FusionWeights(w_face, w_audio)  # validates
         if source_id is None:
             self.weights = weights
@@ -283,9 +271,7 @@ class Engine:
 
     # ---- audio
 
-    def _windows(self, sid: str, chunks: list[AudioChunk]) -> list[AudioResult]:
-        from inference.types import SAMPLE_RATE
-
+    def _windows(self, sid: str, chunks: list[AudioChunk]) -> list[tuple[AudioResult, Window]]:
         st = self.state(sid)
         out = []
         for c in chunks:
@@ -304,7 +290,7 @@ class Engine:
 
     def process_audio(self, audio: dict[str, list[AudioChunk]]) -> list[Union[AudioResult, ErrorResult]]:
         produced: list[Union[AudioResult, ErrorResult]] = []
-        to_ser: list[tuple[AudioResult, Any]] = []
+        to_ser: list[tuple[AudioResult, Window]] = []
         for sid, chunks in audio.items():
             try:
                 windows = self._windows(sid, chunks)
@@ -358,9 +344,6 @@ class Engine:
     # ---- video
 
     def process_frames(self, frames: list[VideoFrame]) -> list[Union[FrameResult, ErrorResult]]:
-        from inference.fer import crop_rgb
-        from inference.fusion import fuse
-
         if not frames:
             return []
         t_start = time.time()
@@ -394,7 +377,7 @@ class Engine:
 
         for fr, st, boxes, ids, first, det_ms in per_frame:
             audio = self.audio_for(st, fr.ts)
-            audio_vec = np.array(list(audio.probs.values())) if audio is not None and audio.probs is not None else None
+            audio_vec = from_dict(audio.probs) if audio is not None and audio.probs is not None else None
             faces = []
             for k, (box, tid) in enumerate(zip(boxes, ids)):
                 face = st.ema.update(tid, probs[first + k])
@@ -433,7 +416,7 @@ def _put(outq, item) -> None:
         pass
 
 
-def _apply_controls(engine: Any, slots: SourceSlots, removed: set[str], controls: deque, outq) -> None:
+def _apply_controls(engine: Engine, slots: SourceSlots, removed: set[str], controls: deque, outq) -> None:
     """Drop removed sources first, then apply queued fusion configs (a config for a re-registered
     id belongs to the new source; one for a source that is gone is skipped, not resurrected)."""
     for sid in removed:
@@ -449,17 +432,24 @@ def _apply_controls(engine: Any, slots: SourceSlots, removed: set[str], controls
             _put(outq, ErrorResult(None, "bad_config", f"{type(exc).__name__}: {exc}"))
 
 
+def _gpu_name() -> str:
+    import torch
+
+    return torch.cuda.get_device_name(0)
+
+
 def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s worker: %(message)s")
     try:
-        check_model_files(settings)
         device = select_device(config.device, settings.variant)
         engine = Engine(settings, device, config)
+        gpu_name = _gpu_name() if device == "cuda" else None
     except Exception as exc:  # noqa: BLE001 - reported to the parent, which raises
         outq.put(("error", f"{type(exc).__name__}: {exc}"))
         return
-    log.info("inference worker ready: device=%s pid=%s ser_fp16=%s", device, os.getpid(), engine.ser.fp16)
-    outq.put(("ready", {"device": device, "pid": os.getpid(), "ser_fp16": engine.ser.fp16}))
+    info = {"device": device, "gpu_name": gpu_name, "pid": os.getpid(), "ser_fp16": engine.ser.fp16}
+    log.info("inference worker ready: %s", info)
+    outq.put(("ready", info))
 
     slots = SourceSlots(config.audio_fifo_chunks)
     stop = threading.Event()
@@ -586,7 +576,8 @@ class InferenceWorker:
 
     @property
     def alive(self) -> bool:
-        return self._proc is not None and self._proc.is_alive()
+        proc = self._proc  # read once: a concurrent stop() sets it to None
+        return proc is not None and proc.is_alive()
 
     def stop(self, timeout: float = 10.0) -> None:
         if self._proc is None:
@@ -624,6 +615,22 @@ class InferenceWorker:
         if not self.alive:
             raise RuntimeError("inference worker is not running")
 
+    def _send(self, msg: tuple, timeout: Optional[float] = None) -> None:
+        """Put on the inbound queue: non-blocking without `timeout` (raises queue.Full).
+
+        Raises RuntimeError if the worker is not running, also when a concurrent stop() closed the queue.
+        """
+        inq = self._inq  # read once: a concurrent stop() sets it to None
+        if inq is None or not self.alive:
+            raise RuntimeError("inference worker is not running")
+        try:
+            if timeout is None:
+                inq.put_nowait(msg)
+            else:
+                inq.put(msg, timeout=timeout)
+        except (ValueError, OSError) as exc:  # "Queue is closed"
+            raise RuntimeError("inference worker is not running") from exc
+
     # ---- sources
 
     def register_source(self, source_id: str) -> None:
@@ -631,14 +638,14 @@ class InferenceWorker:
         with self._lock:
             self._sources.add(source_id)
             self._frame_ids[source_id] = itertools.count(1)
-        self._inq.put(("register", source_id), timeout=5.0)
+        self._send(("register", source_id), timeout=5.0)
 
     def unregister_source(self, source_id: str) -> None:
         self._require_running()
         with self._lock:
             self._sources.discard(source_id)
             self._frame_ids.pop(source_id, None)
-        self._inq.put(("unregister", source_id), timeout=5.0)
+        self._send(("unregister", source_id), timeout=5.0)
 
     def _check(self, source_id: str) -> None:
         if source_id not in self._sources:
@@ -660,7 +667,7 @@ class InferenceWorker:
         now = time.time()
         frame = VideoFrame(source_id, int(frame_id), now if ts is None else float(ts), image, submit_ts=now)
         try:
-            self._inq.put_nowait(("frame", frame))
+            self._send(("frame", frame))
             return True
         except queue.Full:
             return False
@@ -675,7 +682,7 @@ class InferenceWorker:
         self._require_running()
         chunk = AudioChunk(source_id, time.time() if ts is None else float(ts), pcm)
         try:
-            self._inq.put_nowait(("audio", chunk))
+            self._send(("audio", chunk))
             return True
         except queue.Full:
             return False
@@ -688,7 +695,7 @@ class InferenceWorker:
         self._require_running()
         if source_id is not None:
             self._check(source_id)
-        self._inq.put(("config", {"w_face": w_face, "w_audio": w_audio, "source_id": source_id}), timeout=5.0)
+        self._send(("config", {"w_face": w_face, "w_audio": w_audio, "source_id": source_id}), timeout=5.0)
 
     def results(self, timeout: float = 0.0, max_items: int = 10_000) -> list[Result]:
         """Drain available results; waits up to `timeout` seconds for the first one.
@@ -714,6 +721,3 @@ class InferenceWorker:
                 break
         return out
 
-
-def result_to_dict(res: Result) -> dict:
-    return asdict(res)

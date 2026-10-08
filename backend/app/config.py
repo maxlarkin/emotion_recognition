@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # Model files relative to the models directory. Single source of truth for the image layout:
 # used by scripts/fetch_models.py at build time and by /api/health at runtime.
@@ -29,6 +32,7 @@ class Settings:
 def get_settings() -> Settings:
     variant = os.environ.get("APP_VARIANT", "cpu").strip().lower()
     if variant not in ("cpu", "gpu"):
+        log.warning("unknown APP_VARIANT=%r, using cpu", variant)
         variant = "cpu"
     return Settings(
         models_dir=Path(os.environ.get("MODELS_DIR", "/models")),

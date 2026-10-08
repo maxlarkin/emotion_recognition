@@ -38,7 +38,23 @@ describe("HealthView", () => {
     const html = render({ status: "degraded", device: "cpu", models: { ...ALL, fer: false, ser: false } });
     expect(html).toContain("работа ограничена");
     expect(html).toContain("Отсутствуют модели: Эмоции по лицу (EmotiEffLib), Эмоции по голосу (GigaAM-Emo)");
-    expect(html).toContain("файл отсутствует");
+    expect(html).toContain("не загружена");
+  });
+
+  it("shows loading models without calling them missing", () => {
+    const none = { yunet: false, fer: false, vad: false, ser: false };
+    const html = render({ status: "degraded", device: "cpu", models: none, warning: "models_loading" });
+    expect(html).toContain("Модели загружаются");
+    expect(html).toContain("загружается");
+    expect(html).toContain("определяется");
+    expect(html).not.toContain("Отсутствуют модели");
+  });
+
+  it("explains a failed inference start", () => {
+    const none = { yunet: false, fer: false, vad: false, ser: false };
+    const html = render({ status: "degraded", device: "cpu", models: none, warning: "inference_failed" });
+    expect(html).toContain("Модуль распознавания не запустился");
+    expect(html).not.toContain("Отсутствуют модели");
   });
 
   it("marks stale data when the server is unreachable", () => {
