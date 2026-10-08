@@ -22,6 +22,7 @@ from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketState
 
 from app.inference_hub import STARTING, HubUnavailable, InferenceHub, WorkerGone
+from app.store import SessionStore
 from inference.types import EMOTIONS, AudioResult, ErrorResult, FaceResult, FrameResult
 from sources.webcam import AudioPacket, BadMessage, WebcamFrame, decode_jpeg, parse_message
 
@@ -108,9 +109,10 @@ def error_msg(message: str) -> dict:
 
 
 class LiveConnection:
-    def __init__(self, ws: WebSocket, hub: Optional[InferenceHub]):
+    def __init__(self, ws: WebSocket, hub: Optional[InferenceHub], store: Optional[SessionStore] = None):
         self.ws = ws
         self.hub = hub
+        self.store = store
         self.loop = asyncio.get_running_loop()
         self.out: asyncio.Queue[Any] = asyncio.Queue()
         self.source_id: Optional[str] = None
@@ -129,6 +131,8 @@ class LiveConnection:
                 tg.start_soon(self._guard, self._receive_loop, tg.cancel_scope)
         finally:
             sid, self.source_id = self.source_id, None
+            if sid is not None:
+                self._store_call("finish", sid)
             if sid is not None and self.hub is not None:
                 # Off the loop (may block on the worker queue) and shielded: if this task is being
                 # cancelled, a cancelled to_thread() would drop the job before it starts.
@@ -146,6 +150,15 @@ class LiveConnection:
 
     def _reply(self, msg: dict) -> None:
         self.out.put_nowait(msg)
+
+    def _store_call(self, method: str, *args) -> None:
+        """Session store write (enqueued, non-blocking). A failure is logged; the session goes on."""
+        if self.store is None:
+            return
+        try:
+            getattr(self.store, method)(*args)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("session store %s failed: %s: %s", method, type(exc).__name__, exc)
 
     # ---- receive side
 
@@ -177,6 +190,8 @@ class LiveConnection:
             self.pending.clear()
             self.not_started_reported = False
             self.fusion = None  # weights belong to the stopped session
+            if sid is not None:
+                self._store_call("finish", sid)
             if sid is not None and self.hub is not None:
                 await asyncio.to_thread(self.hub.unregister, sid)
         elif kind == "config":
@@ -201,6 +216,7 @@ class LiveConnection:
                 self.fusion = None
         self.source_id = sid
         self.not_started_reported = False
+        self._store_call("create", sid, "live")
         self._reply({"type": "session", "session_id": sid})
 
     async def _config(self, obj: dict) -> None:
@@ -280,7 +296,13 @@ class LiveConnection:
                 await self._send(item)
             elif isinstance(item, FrameResult):
                 if item.source_id == self.source_id:
-                    await self._send(self._frame_result(item))
+                    wire = self._frame_result(item)
+                    self._store_call("record_frame", item.source_id, wire["frame_id"], wire["capture_ts"], wire["faces"], wire["audio"])
+                    await self._send(wire)
+            elif isinstance(item, AudioResult):
+                # A window emitted on its own (not attached to a frame); skipped = no SER probs.
+                if item.source_id == self.source_id and not item.skipped:
+                    self._store_call("record_audio", item.source_id, audio_to_wire(item))
             elif isinstance(item, ErrorResult):
                 if item.source_id == self.source_id:
                     log.warning("frame error for %s: %s %s", item.source_id, item.kind, item.message)
@@ -289,6 +311,7 @@ class LiveConnection:
             elif isinstance(item, WorkerGone):
                 if item.source_id == self.source_id:
                     self.source_id = None  # the worker is gone: nothing to unregister
+                    self._store_call("finish", item.source_id)
                     await self._send(error_msg(MSG_WORKER_DIED))
                     if self.ws.application_state == WebSocketState.CONNECTED:
                         await self.ws.close(code=1011)
@@ -312,5 +335,6 @@ class LiveConnection:
 async def live(websocket: WebSocket) -> None:
     await websocket.accept()
     hub: Optional[InferenceHub] = getattr(websocket.app.state, "hub", None)
-    await LiveConnection(websocket, hub).run()
+    store: Optional[SessionStore] = getattr(websocket.app.state, "store", None)
+    await LiveConnection(websocket, hub, store).run()
 

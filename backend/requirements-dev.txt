@@ -7,3 +7,4 @@ numpy
 opencv-python-headless  # JPEG decode in sources.webcam (tests of /ws/live)
 httpx==0.28.1
 pytest==9.1.1
+pandas==3.0.6  # CAP-4: exports must re-import with pandas (tests/test_sessions.py)

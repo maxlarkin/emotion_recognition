@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchHealth, type Health, type ModelKey } from "./api";
 import LiveView from "./live/LiveView";
+import SessionsView from "./sessions/SessionsView";
 
 const MODEL_LABELS: Record<ModelKey, string> = {
   yunet: "Детектор лиц (YuNet)",
@@ -21,6 +22,8 @@ const POLL_MS = 5000;
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessionsKey, setSessionsKey] = useState(0);
+  const bumpSessions = () => setSessionsKey((k) => k + 1);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -46,7 +49,7 @@ export default function App() {
     <main className="page">
       <h1>Распознавание эмоций</h1>
       <div className="layout">
-        <LiveView />
+        <LiveView onSessionStart={bumpSessions} onSessionEnd={bumpSessions} />
         <section className="card health" aria-live="polite">
           <h2>Состояние системы</h2>
           {error && !health && <p className="error">Сервер недоступен ({error}). Повторная попытка…</p>}
@@ -54,6 +57,7 @@ export default function App() {
           {health && <HealthView health={health} stale={error !== null} />}
         </section>
       </div>
+      <SessionsView refreshKey={sessionsKey} />
     </main>
   );
 }

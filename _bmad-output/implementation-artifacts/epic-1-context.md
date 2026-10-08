@@ -4,7 +4,7 @@
 
 ## Goal
 
-Deliver within 1.5 months a working, fully offline Docker prototype that recognises the 7 basic emotions in real time from face video and Russian speech on a single laptop (NVIDIA GPU with 4 GB VRAM, 16 GB RAM, CPU-only must also work). The demo covers: a live webcam and microphone session with an overlay; parallel analysis of at least 3 RTSP camera streams on one multi-camera screen; analysis of uploaded video files; and CSV/JSON export. It also delivers the documents that justify the system: a benchmark report, an accuracy evaluation report, a media quality regulation, and a scaling plan for 20+ cameras. The project is judged as a working demo, not on accuracy. Open pretrained models are used with no fine-tuning, and the 95–98% accuracy targets are explicitly out of reach.
+Deliver an offline, Docker-only prototype for a quality manager who oversees client service points. It recognises the 7 basic emotions in real time from faces (primary) and Russian speech (secondary). Sources are the browser webcam and microphone, uploaded video files, and 20 parallel RTSP streams of three camera types (webcam, sector, security). The system writes a journal of negative and positive emotion events and exports results. It also produces evidence-backed documents: a benchmark, an accuracy evaluation with a face-size sweep, a media-quality regulation per camera type, and a hardware plan for 30–50 cameras with an outlook to 3000. It is judged as a working demo on one laptop (4 GB VRAM, 16 GB RAM) with the network unplugged. Accuracy is measured and reported, not required to meet a target.
 
 ## Stories
 
@@ -13,103 +13,93 @@ Deliver within 1.5 months a working, fully offline Docker prototype that recogni
 - Story 1.3: Live webcam analysis with overlay and latency readout
 - Story 1.4: Live microphone emotion and fusion in UI
 - Story 1.5: Session persistence and CSV/JSON export
-- Story 1.6: RTSP multi-stream ingest with demo cameras
-- Story 1.7: Multi-camera grid screen with system load
-- Story 1.8: Recorded video upload, analysis and synced playback
-- Story 1.9: Offline and cross-platform hardening
-- Story 1.10: Multi-stream capacity benchmark and report
-- Story 1.11: Offline accuracy evaluation script and report
-- Story 1.12: Media quality regulation document
-- Story 1.13: Scaling plan for 20+ cameras
+- Story 1.6: RTSP ingest with camera profiles
+- Story 1.7: Twenty-camera demo set and throughput
+- Story 1.8: Multi-camera grid screen for twenty cameras with system load
+- Story 1.9: Emotion event engine and journal
+- Story 1.10: Recorded video upload, analysis and synced playback
+- Story 1.11: Offline and cross-platform hardening
+- Story 1.12: Per-profile capacity benchmark and report
+- Story 1.13: Accuracy evaluation with face-size sweep
+- Story 1.14: Media quality regulation per camera type
+- Story 1.15: Hardware plan for 30-50 cameras and outlook to 3000
 
 ## Requirements & Constraints
 
-- **Live webcam:** box plus emotion and confidence for each face. On the GPU profile, p95 latency from capture to overlay render must stay < 1000 ms over 60 s, and the UI shows it. Faces gain or lose boxes within 1 s of entering or leaving the frame.
-- **Live audio:** while the user speaks, the UI shows the vocal and fused emotions. In silence it shows "no speech" and the fused emotion equals the facial one. Muting the mic must not break video.
-- **Multi-stream RTSP:**
-  - At least 3 emulated 720p cameras with audio are analysed in parallel for 10 min on the GPU profile. Each stream keeps p95 < 1000 ms and ≥ 5 analysed fps.
-  - Each tile shows frames, boxes, facial/vocal/fused emotions, fps and p50/p95. The screen shows overall CPU, RAM, GPU and VRAM load.
-  - Streams are isolated: stopping or losing one does not affect the others. A lost stream shows its status and reconnects automatically. Streams can be added by URL at runtime without a restart.
-- **Files:** mp4/webm/mkv/avi up to 10 min, with visible progress, synced playback overlay and an emotion-over-time chart. Files with no audio or no faces finish successfully and report it. An unsupported codec gives a failed status with a message.
-- **Export:** CSV and JSON for any finished webcam, file or RTSP session. Both must be re-importable by pandas.
-- **Ops:**
-  - The CPU profile runs with `docker compose up`, the GPU profile with `docker compose --profile gpu up`, at `http://localhost`, on Linux and on Windows (Docker Desktop, WSL2).
-  - Everything works with the network unplugged, including the emulated cameras. The GPU profile falls back to CPU with a visible warning.
-- **Benchmark and evaluation:**
-  - One benchmark command reports per-stage ms (detection, FER, SER per window), peak VRAM/RAM, and the maximum number of parallel 720p@5fps streams with and without audio, on both CPU and GPU.
-  - One offline evaluation command reports UAR, macro-F1 and confusion matrices: FER on a RAF-DB/AffectNet subset, SER on RESD and Dusha subsets. Datasets are not bundled; the script takes local paths.
-- **Documents:**
-  - The media regulation covers video parameters (resolution, face px, interocular distance, fps, compression, pose, occlusion, light) and audio parameters (sample rate, bit depth, codec/bitrate, SNR, segment length), with evidence for each and the measurement conditions.
-  - The scaling plan uses the measured per-node capacity, compares single-server and multi-node options with hardware and cost, and recommends one.
-- **Hard constraints:**
-  - All models must fit together in 4 GB VRAM / 16 GB RAM.
-  - No CDN, remote fonts, model hub or package installs at runtime. Weights are baked in at build and verified by checksum.
-  - All UI text is in Russian.
-  - The local camera and mic are captured in the browser (`getUserMedia`), with no device passthrough. RTSP is ingested on the server.
-- **Non-goals:** auth or multi-user access; running ≥ 20 cameras; ONVIF, PTZ or RTSP recording; RTSP auth beyond credentials in the URL; annotated MP4 export; valence/arousal; cloud or Kubernetes.
+- **Live webcam:** p95 latency from capture to overlay render is under 1 s over 60 s on the GPU profile, and the UI shows it. Face boxes appear or disappear within 1 s.
+- **Microphone:** shows the vocal emotion and a fused emotion while the user speaks, and "no speech" otherwise; in silence the fused emotion equals the facial one. Muting the mic must not break video.
+- **Files:** mp4/webm/mkv/avi up to 10 min, with visible progress, synced playback overlay and an emotion-over-time chart. A file with no audio or no faces finishes cleanly with a note; an unsupported codec gives `failed` with a message.
+- **Export:** every finished session (live, file, rtsp) exports CSV and JSON, and pandas must re-import both.
+- **20 streams (GPU profile):** the demo mix runs for 10 min with each stream at ≥ 5 analysed fps, `proc_ms` p95 ≤ 100 ms, and decode-to-result p95 < 1 s. Losing or stopping one stream does not affect the others; a lost stream reconnects. Streams can be added by URL and camera type at runtime without a restart.
+- **Events:** a sustained emotion on a face track produces one event within 1 s of the rule holding. Events come from every source. The journal filters by kind, camera and time and exports. The demo clips' scripted negative and positive moments must each produce an event.
+- **Offline:** no CDN, remote fonts or model-hub calls at runtime. Weights are baked in at build. The built frontend must contain no external URLs.
+- **CPU-only mode must work**, and GPU falls back to CPU with a visible UI warning. The 20-stream targets apply to GPU only.
+- **Budget:** all models together fit in 4 GB VRAM and 16 GB RAM.
+- **Privacy:** no face recognition, embeddings, identities or stored face images.
+- UI text is in Russian. Runs on Linux and Windows (Docker Desktop, WSL2).
+- **Non-goals:** fine-tuning, alert or ticket delivery (only document the seam), more than 20 streams, auth, ONVIF/PTZ/recording, annotated MP4 export, emotions beyond the 7.
 
 ## Technical Decisions
 
-- **Models:**
-  - Face detection: YuNet via OpenCV `FaceDetectorYN`, with the model version matched to the OpenCV major version.
-  - FER: EmotiEffLib `enet_b0_8_va_mtl` on ONNX. It has 8 classes; drop contempt and renormalise to 7.
-  - VAD: Silero VAD at 16 kHz.
-  - SER: GigaAM-Emo, fp16 on GPU. Confirm its labels via `get_probs`. Fallback only: emotion2vec+ base.
-- **Emotion keys** are always `anger, disgust, fear, happiness, sadness, surprise, neutral`. Audio labels map angry→anger, sad→sadness, neutral→neutral, positive→happiness. Fear, disgust and surprise come from the face only.
+- **Models (pretrained, no fine-tuning):**
+  - Face detection: YuNet via OpenCV `FaceDetectorYN`.
+  - FER: EmotiEffLib `enet_b0_8_va_mtl` on ONNX; drop contempt and renormalise to 7 classes.
+  - VAD: Silero.
+  - SER: GigaAM-Emo, with labels mapped angry→anger, sad→sadness, neutral→neutral, positive→happiness; disgust, fear and surprise are always 0 from audio.
+- **Emotion keys** are always `anger, disgust, fear, happiness, sadness, surprise, neutral`.
+- **Pipeline:** every source feeds one inference worker process through "source → queue → worker → results", outside the FastAPI event loop.
+  - Each source has a latest-frame slot of size 1, which drops stale frames. Audio and file jobs use bounded FIFOs.
+  - The worker batches faces across sources.
+  - RTSP decoding runs outside the worker. With 20 streams, use threads or a small process pool, not one process per stream.
 - **Processing:**
-  - IoU tracker for stable track ids.
-  - Per-track EMA on facial probabilities (α 0.4, configurable).
-  - Audio is PCM16 mono 16 kHz in 500 ms chunks. SER runs on a 3 s window with a 1 s hop, only if VAD marks speech in ≥ 50% of the window.
-  - Fusion is `renormalise(w_face·p_face + w_audio·p_audio)` over all 7 keys (defaults 0.7 / 0.3). Audio is 0 on disgust/fear/surprise, so those get only the weighted face term. Without speech `w_audio` is 0 and fused equals face. The wire `audio.probs` always carries all 7 keys.
-- **Single inference worker process** holds all models and runs outside the FastAPI event loop. Every source (webcam WS, RTSP, file) feeds it through the "source → queue → worker → results" seam. It keeps a per-source latest-frame slot of size 1 that drops stale frames, plus bounded FIFOs for audio and file jobs, and batches faces across sources. Models load once.
-- **Live input:** the client sends JPEG at 5–10 fps (default 8), longest side ≤ 640 px, quality ~0.8. The server answers only the latest frame; dropped frames get no reply.
-- **RTSP ingest:**
-  - One source process per stream decodes with PyAV (TCP, 5 s open timeout), samples to 8 fps (minimum 5), and resamples audio to 16 kHz mono windows. Decoding never runs inside the worker.
-  - Reconnect backoff is 1, 2, 4… s, capped at 30 s. `DEFAULT_STREAMS` env lists the startup streams.
-- **Demo cameras:** compose profile `demo-cams` runs a pinned `bluenviron/mediamtx` plus an ffmpeg emulator. The emulator loops `demo-videos/cam{1,2,3}.mp4` (H.264 + AAC, `-re -stream_loop -1`) to `rtsp://mediamtx:8554/cam{1,2,3}`. Clips must be openly licensed, with close-up faces and Russian speech, and attributed in `demo-videos/ATTRIBUTION.md`.
-- **System load:** `psutil` for CPU/RAM. NVML (`nvidia-ml-py`) for GPU/VRAM, which returns null on CPU or with no GPU.
-- **Files:** decoded with PyAV/ffmpeg, video sampled at 5 fps, audio windowed like live audio.
-- **Fixed protocol contract** (change only via a spec update):
-  - `/ws/live`:
-    - Binary video frames: `0x01`, f64 `capture_ts`, u32 `frame_id`, then JPEG.
-    - Binary audio chunks: `0x02`, f64 `capture_ts`, then PCM16.
-    - JSON control messages: start, stop, config.
-    - The server sends `frame_result` (faces, audio), `session` and `error`.
-  - `/ws/streams` (view-only, one socket for the whole grid):
-    - Binary `0x11` frames: u16 id length, `stream_id`, u32 `frame_id`, then JPEG ≤ 640 px. Each is sent just before its `stream_result`.
-    - JSON messages: `stream_status` (connecting/running/reconnecting/stopped/error) and `system` once per second with `server_ts`.
-    - Optional `subscribe`.
-    - Latency is `render − decode_ts`, corrected by the clock offset taken from `server_ts`.
-  - REST:
-    - `/api/health` reports the device and loaded models. `/api/system` is also exposed.
-    - Endpoints: `/api/files` (POST), `/api/streams` (GET, POST, DELETE), and `/api/sessions` with list, detail, timeline, media, export and delete.
-    - Session kinds are `live|file|rtsp`. File statuses are `queued|processing|done|failed`, with notes `no_audio_track` and `no_faces_detected`.
-    - Stream URLs are returned with credentials masked.
-  - The export row has the fixed column order `session_id, stream_id, ts_ms, source(face|audio), track_id, box_*, p_<7 keys>, face_label, audio_label, fused_label, speech`. `stream_id` is empty for webcam and file sessions. Audio rows have empty box columns and zeros for classes with no audio counterpart.
-- **Runtime:** Python 3.11, FastAPI/Uvicorn, ONNX Runtime with exactly one package per image (`onnxruntime` for CPU, `onnxruntime-gpu` for GPU), PyTorch only where GigaAM needs it, OpenCV, PyAV, SQLite in the named volume `data`, which also holds uploads.
-- **Frontend:** React + TS + Vite. Canvas overlay on the local `<video>`. Chart library bundled locally. nginx serves the SPA and proxies `/api` and `/ws`.
-- **Docker:** one backend Dockerfile with `VARIANT=cpu|gpu`. The GPU profile uses `gpus: all`; both images use `python:3.11-slim`, and CUDA/cuDNN libraries come from the torch `nvidia-*` wheels. Port 80 is configurable via `.env`.
+  - Live JPEG at 5–10 fps, longest side ≤ 640 px.
+  - IoU tracker with EMA smoothing, α = 0.4.
+  - Audio is PCM16 mono 16 kHz in 500 ms chunks. SER runs on a 3 s window with a 1 s hop, only when ≥ 50% of the window is speech.
+  - Fusion: `renormalise(0.7·face + 0.3·audio)`. With no speech, w_audio = 0.
+- **RTSP:**
+  - PyAV over TCP with a 5 s open timeout. The GPU profile uses NVDEC (`hwaccel` cuda) with CPU decode as the fallback.
+  - Video is sampled at 5 fps and scaled to the camera profile's detection size (webcam 640, sector 1920, security 2560). FER crops come from that frame. Tiles go to the browser at ≤ 640 px.
+  - Reconnect backoff is 1, 2, 4… s, capped at 30 s. `camera_type` defaults to `sector`.
+  - If CPU YuNet cannot hold the mix, run YuNet on the ORT CUDA EP or detect every 2nd frame and let the tracker carry boxes.
+- **Event rule:** applied per track on the smoothed fused probabilities.
+  - Negative when the sum of anger, disgust, fear and sadness is ≥ 0.6 for ≥ 2 s. Positive when happiness is ≥ 0.6 for ≥ 2 s.
+  - The same kind is not repeated on the same track within 30 s. Thresholds are configurable.
+  - An event stores the peak emotion, the mean group probability and the duration, in SQLite.
+- **Contracts are fixed:** the `/ws/live`, `/ws/streams` and REST payloads, the export row and the event object are defined in `interfaces.md`.
+  - The export row includes `stream_id`, which is empty for webcam and file sessions.
+  - Session kinds are `live`, `file` and `rtsp`.
+- **Runtime:**
+  - Python 3.11 base image `python:3.11-slim` for both images. The GPU image takes CUDA 12.6 from the torch cu126 wheels.
+  - Exactly one onnxruntime package per image.
+  - SQLite and uploads live in the named volume `data`.
+  - nginx serves the SPA and proxies `/api` and `/ws`.
+  - The `gpu` compose profile uses `gpus: all`.
+  - The `demo-cams` profile runs mediamtx and an ffmpeg emulator that loops pre-encoded clips with `-c copy`. `DEFAULT_STREAMS` lists the 20 URLs.
+  - System load comes from psutil plus NVML; the GPU fields are null without a GPU.
+- **Demo mix:**
+  - 6 webcam streams: 640×480, audio, faces ≥ 90 px.
+  - 8 sector streams: 1080p, audio, faces 50–100 px.
+  - 6 security streams: 1440p, no audio, faces 25–45 px.
+  - All at 10 fps. Clips are openly licensed and recorded in `demo-videos/ATTRIBUTION.md`.
+- **Docs:**
+  - CAP-8 converts the CAP-7 face-size sweep (16–100 px) through pixels-per-metre into per-camera-type minimum resolutions. Face px = 0.16 m · ppm.
+  - CAP-9 sizes hardware from the measured per-profile stream capacity.
 
 ## UX & Interaction Patterns
 
-- Russian-only UI.
-- **Live screen:** local video with a canvas overlay of boxes, emotion and confidence; a p50/p95 latency readout; an audio state indicator ("no speech" or the vocal emotion); the fused emotion.
-- **Multi-camera screen:** one tile per stream, add/remove by RTSP URL, per-tile status, and an overall system load panel.
-- **Upload flow:** progress, then playback with a synced overlay and an emotion timeline chart.
-- **Sessions:** list with CSV/JSON download.
-- **GPU fallback:** a visible warning.
+- **Live screen:** local `<video>` with a canvas overlay of boxes and the emotion and confidence for each face. It shows the audio state, the vocal and fused emotions, and the p50/p95 latency.
+- **Multi-camera grid** (20 tiles), one socket for the whole grid:
+  - Each tile shows the analysed frame with boxes, facial/vocal/fused emotions, fps, p50/p95 latency and the stream status.
+  - Streams are added by RTSP URL and camera type, and can be removed.
+  - The page shows overall CPU, RAM, GPU and VRAM load.
+- **Journal:** events arrive live, with camera, time, emotion, confidence and duration. Negative events are highlighted. It filters by kind, camera and time range, and exports.
+- **File view:** upload with progress, synced playback overlay, timeline chart, and download buttons. The chart library is bundled locally.
 
 ## Cross-Story Dependencies
 
-- 1.1 (done) provides the compose, the images and the baked weights that everything else builds on.
-- 1.2's multi-source worker underpins 1.3, 1.4, 1.6 and 1.8.
-- 1.3 must come before 1.4, which reuses `/ws/live`.
-- 1.5's persistence and export, including `stream_id`, are reused by 1.6 (rtsp sessions) and 1.8.
-- 1.6 must come before 1.7 (grid UI) and 1.10, which drives N streams from the demo-cams emulator.
-- 1.9 verifies offline operation across all of it, including demo-cams.
-- 1.10 → 1.13: the measured capacity feeds the scaling plan.
-- 1.11 → 1.12: accuracy results feed the media regulation.
-- Done-checkpoint stories, where the agent stops for human review: 1.1, 1.2, 1.3, 1.7, 1.8, 1.9, 1.12, 1.13.
-- Stop-and-report triggers:
-  - 1.2: the models don't fit in 4 GB VRAM, or FER plus detector take more than 100 ms per frame on GPU.
-  - 1.6: no suitable licensed clips can be found.
+- **1.1–1.4 are done.** They provide the compose skeleton, the shared worker, live video and live audio. Later stories reuse the worker seam; they do not fork it.
+- **1.5 (persistence and export)** underpins file sessions (1.10), rtsp sessions (1.6) and the event store (1.9). Add the `stream_id` column now.
+- **Streams:** 1.6 adds RTSP backend ingest. 1.7 builds the 20-clip mix and tunes the pipeline. 1.8 builds the grid UI on top of both.
+- **Events:** 1.9 needs fused smoothed results from every source. The event WS message travels on `/ws/streams`.
+- **Hardening:** 1.11 verifies offline operation for everything, including the demo-cams profile and the journal.
+- **Docs chain:** 1.12 (benchmark) feeds 1.15 (hardware plan), and 1.13 (face-size sweep) feeds 1.14 (media regulation).

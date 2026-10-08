@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-01-2026 11:15
-last_updated: 10-08-2026 12:00
+last_updated: 10-08-2026 13:30
 project: emotion_recognition
 project_key: NOKEY
 tracking_system: file-system
@@ -40,7 +40,7 @@ development_status:
   1-2-inference-core-with-per-stage-benchmark: done
   1-3-live-webcam-analysis-with-overlay-and-latency-readout: done
   1-4-live-microphone-emotion-and-fusion-in-ui: done
-  1-5-session-persistence-and-csv-json-export: backlog
+  1-5-session-persistence-and-csv-json-export: review
   1-6-rtsp-ingest-with-camera-profiles: backlog
   1-7-twenty-camera-demo-set-and-throughput: backlog
   1-8-multi-camera-grid-screen-for-twenty-cameras-with-system-load: backlog

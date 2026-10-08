@@ -309,7 +309,13 @@ function formatMs(v: number | null): string {
   return v === null ? "—" : `${Math.round(v)} мс`;
 }
 
-export default function LiveView() {
+/** `onSessionStart`/`onSessionEnd` fire when the server confirms a session and when it is stopped. */
+export default function LiveView({
+  onSessionStart,
+  onSessionEnd,
+}: { onSessionStart?: () => void; onSessionEnd?: () => void } = {}) {
+  const sessionCbRef = useRef({ onSessionStart, onSessionEnd });
+  sessionCbRef.current = { onSessionStart, onSessionEnd };
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runRef = useRef<LiveRun | null>(null);
@@ -336,8 +342,10 @@ export default function LiveView() {
   const stop = () => {
     attemptRef.current++;
     window.clearTimeout(noticeTimerRef.current);
+    const hadRun = runRef.current !== null;
     runRef.current?.stop();
     runRef.current = null;
+    if (hadRun) sessionCbRef.current.onSessionEnd?.();
     if (videoRef.current) videoRef.current.srcObject = null;
     setResult(null);
     setPhase("idle");
@@ -391,7 +399,10 @@ export default function LiveView() {
       return;
     }
     const run = new LiveRun(stream, video, canvas, {
-      onSession: () => setPhase("running"),
+      onSession: () => {
+        setPhase("running");
+        sessionCbRef.current.onSessionStart?.();
+      },
       onFatal: (message) => {
         if (runRef.current !== run) return;
         stop();

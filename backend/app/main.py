@@ -9,8 +9,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.health import _cached_device, router as health_router
+from app.api.sessions import router as sessions_router
 from app.config import get_settings
 from app.inference_hub import InferenceHub
+from app.store import SessionStore
 from app.ws.live import router as live_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -23,6 +25,12 @@ async def lifespan(app: FastAPI):
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     info = _cached_device(settings.variant)  # probe once at startup, not per request
     log.info("variant=%s device=%s gpu=%s warning=%s", settings.variant, info.device, info.gpu_name, info.warning)
+    # Session store (CAP-4). A store that cannot open is logged; live analysis works without it.
+    try:
+        app.state.store = SessionStore(settings.data_dir / "app.db")
+    except Exception:  # noqa: BLE001
+        log.exception("session store unavailable")
+        app.state.store = None
     # One inference worker per backend process. Models load in a background thread so the API
     # (health, UI) is reachable meanwhile; /ws/live answers "loading" until the hub is ready.
     hub = InferenceHub()
@@ -33,8 +41,12 @@ async def lifespan(app: FastAPI):
     finally:
         await asyncio.to_thread(hub.stop)
         app.state.hub = None
+        store, app.state.store = app.state.store, None
+        if store is not None:
+            await asyncio.to_thread(store.close)
 
 
 app = FastAPI(title="Распознавание эмоций", lifespan=lifespan)
 app.include_router(health_router)
+app.include_router(sessions_router)
 app.include_router(live_router)
