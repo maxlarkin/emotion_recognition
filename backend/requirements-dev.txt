@@ -2,6 +2,7 @@
 # Shared versions (fastapi, ...) come from requirements.txt via the constraints file.
 # Install with uv (see AGENTS.md): plain pip rejects constraints with extras (uvicorn[standard]).
 -c requirements.txt
+-r requirements-stream.txt  # PyAV: sources.rtsp tests decode generated clips
 fastapi
 numpy
 opencv-python-headless  # JPEG decode in sources.webcam (tests of /ws/live)

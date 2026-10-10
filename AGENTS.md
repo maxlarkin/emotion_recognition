@@ -113,6 +113,14 @@ docker compose --profile cpu --profile gpu down  # остановить оба �
 docker compose down -v                        # остановить и удалить данные (sessions, uploads)
 ```
 
+Демо-камеры (профиль `demo-cams`: MediaMTX и эмулятор с тремя синтетическими RTSP-камерами `rtsp://mediamtx:8554/cam1..cam3`). Профиль бэкенда указывайте явно: флаг `--profile` отменяет `COMPOSE_PROFILES` из `.env`. При пустом списке потоков `DEFAULT_STREAMS` добавляет камеры один раз:
+
+```bash
+DEFAULT_STREAMS="$(cat demo-videos/demo-cams.json)" docker compose --profile cpu --profile demo-cams up -d
+docker compose --profile gpu --profile demo-cams up -d          # GPU; потоки уже сохранены в volume data
+docker compose --profile cpu --profile gpu --profile demo-cams down
+```
+
 Приложение: http://localhost. Проверка состояния:
 
 ```bash

@@ -1,7 +1,7 @@
 // App-wide live data: stream list, per-stream feed from /ws/streams (or its mock), system load and
 // new incidents. One instance for the whole app; screens read it through the hooks below.
 import { api, type EmotionEvent, type Stream, type StreamResult, type StreamState, type SystemLoad } from "../api";
-import type { StreamFrame } from "../api/streamsSocket";
+import type { ConnectionEvent, StreamFrame } from "../api/streamsSocket";
 import { RollingStats, type StatsView } from "./stats";
 import { Store, useStore } from "./store";
 
@@ -17,6 +17,7 @@ const EMPTY_STATS: StatsView = { p50: null, p95: null, usablePct: null, medianFa
 export const FEED_STALE_MS = 3000;
 /** New incidents fetched for the bell; the badge shows «N+» at this count. */
 export const INCIDENTS_LIMIT = 100;
+const STREAMS_REFRESH_MS = 500;
 
 export class AppData {
   readonly streamsStore = new Store();
@@ -46,6 +47,7 @@ export class AppData {
     this.disconnect = api.connectStreams(
       (m) => this.onMessage(m),
       (f) => this.onFrame(f),
+      (e) => this.onConnection(e),
     );
   }
 
@@ -118,6 +120,17 @@ export class AppData {
     for (const l of this.eventListeners) l(ev);
   }
 
+  private refreshTimer = 0;
+
+  /** One list reload for a burst of status changes (20 cameras reconnecting at once). */
+  scheduleStreamsRefresh(delayMs = STREAMS_REFRESH_MS): void {
+    if (this.refreshTimer) return;
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = 0;
+      void this.refreshStreams();
+    }, delayMs);
+  }
+
   private setState(id: string, state: StreamState): void {
     const s = this.stream(id);
     if (!s) {
@@ -126,6 +139,9 @@ export class AppData {
     }
     if (s.state === state) return;
     this.streams = this.streams!.map((x) => (x.id === id ? { ...x, state } : x));
+    // Rows change with the state (resolution, audio, decode once open; removal shows up as stopped),
+    // and other tabs may have renamed or deleted streams: reread the list, coalesced.
+    this.scheduleStreamsRefresh();
     if (state !== "running") {
       this.rolling.get(id)?.clear();
       const f = this.feeds.get(id);
@@ -167,6 +183,22 @@ export class AppData {
     }
   }
 
+  /** After a reconnect, statuses and events sent during the gap are lost: reload them. While
+   * disconnected, every feed is stale (no faces, no stats) instead of showing the last frame. */
+  private onConnection(e: ConnectionEvent): void {
+    if (e.type === "closed") {
+      for (const [id, f] of this.feeds) {
+        if (f.frameUrl) URL.revokeObjectURL(f.frameUrl);
+        this.feeds.set(id, { result: null, resultAt: 0, frameUrl: null, stats: EMPTY_STATS });
+        this.rolling.get(id)?.clear();
+      }
+      this.feedStore.emit();
+    } else if (!e.first) {
+      void this.refreshStreams();
+      void this.refreshIncidents();
+    }
+  }
+
   private onFrame(f: StreamFrame): void {
     const prev = this.feed(f.stream_id);
     if (prev.frameUrl) URL.revokeObjectURL(prev.frameUrl);
@@ -188,5 +220,14 @@ export function useFeedVersion(): number {
 
 export function useIncidents(): EmotionEvent[] {
   useStore(appData.incidentsStore);
-  return appData.newIncidents;
+  useStore(appData.streamsStore);
+  return knownIncidents(appData.newIncidents, appData.streams);
+}
+
+/** Incidents of streams that exist (or of non-stream sources). While events are still mocked
+ * (until story 1.10) their demo stream ids do not match real streams and are hidden. */
+export function knownIncidents(incidents: readonly EmotionEvent[], streams: readonly Stream[] | null): EmotionEvent[] {
+  if (!streams) return [...incidents];
+  const ids = new Set(streams.map((s) => s.id));
+  return incidents.filter((e) => e.stream_id === null || ids.has(e.stream_id));
 }

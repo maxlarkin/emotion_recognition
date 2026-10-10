@@ -536,3 +536,20 @@ def test_config_queue_full_reports_and_keeps_serving(client, fake_worker):
         ws.send_bytes(encode_frame(1.0, 1, JPEG))
         assert ws.receive_json()["frame_id"] == 1
     assert fake_worker.fusion_calls == []
+
+
+def test_frame_decision_abstains_then_none(client, fake_worker):
+    """Faces carry face_px and decision: abstain for a track younger than 1 s (source clock), then none;
+    a new session starts the track over."""
+    with client() as c, ready(c).websocket_connect("/ws/live") as ws:
+        start(ws)
+        ws.send_bytes(encode_frame(1727780000000.0, 1, JPEG))
+        first = ws.receive_json()["faces"][0]
+        assert first["face_px"] == first["box"][2] == 160
+        assert first["decision"] == "abstain"
+        ws.send_bytes(encode_frame(1727780001200.0, 2, JPEG))
+        assert ws.receive_json()["faces"][0]["decision"] == "none"
+        ws.send_text(json.dumps({"type": "stop"}))
+        start(ws)
+        ws.send_bytes(encode_frame(1727780001400.0, 3, JPEG))
+        assert ws.receive_json()["faces"][0]["decision"] == "abstain"

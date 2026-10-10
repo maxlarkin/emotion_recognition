@@ -1,0 +1,5 @@
+[
+  {"name": "Касса (веб-камера)", "site": "Демо", "url": "rtsp://mediamtx:8554/cam1", "camera_type": "webcam"},
+  {"name": "Зал (секторная)", "site": "Демо", "url": "rtsp://mediamtx:8554/cam2", "camera_type": "sector"},
+  {"name": "Вход (купольная)", "site": "Демо", "url": "rtsp://mediamtx:8554/cam3", "camera_type": "security"}
+]

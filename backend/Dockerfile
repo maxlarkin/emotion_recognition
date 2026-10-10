@@ -44,6 +44,11 @@ RUN pip install --no-cache-dir -r requirements-${VARIANT}.txt \
 print('ort', ort.__version__, ort.get_available_providers()); print('cv2', cv2.__version__); print('torch', torch.__version__)" \
     && if [ "$(pip list 2>/dev/null | grep -ciE '^onnxruntime(-gpu)? ')" != "1" ]; then echo 'exactly one onnxruntime package expected' >&2; exit 1; fi
 
+# RTSP decoding (PyAV with bundled FFmpeg) in its own layer: the torch layer above stays cached.
+COPY requirements-stream.txt ./
+RUN pip install --no-cache-dir -r requirements-stream.txt \
+    && python -c "import av; from av.codec.hwaccel import hwdevices_available; print('av', av.__version__, hwdevices_available())"
+
 # Weights: only the manifest and fetch script are copied first so code edits keep this layer cached.
 COPY app/__init__.py app/config.py app/
 COPY scripts/fetch_models.py scripts/

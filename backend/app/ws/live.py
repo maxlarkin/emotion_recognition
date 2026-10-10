@@ -21,9 +21,10 @@ import anyio
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketState
 
+from app.faces import MIN_TRACK_AGE_S, TrackAges, face_to_wire
 from app.inference_hub import STARTING, HubUnavailable, InferenceHub, WorkerGone
 from app.store import SessionStore
-from inference.types import EMOTIONS, AudioResult, ErrorResult, FaceResult, FrameResult
+from inference.types import EMOTIONS, AudioResult, ErrorResult, FrameResult
 from sources.webcam import AudioPacket, BadMessage, WebcamFrame, decode_jpeg, parse_message
 
 log = logging.getLogger(__name__)
@@ -43,18 +44,6 @@ MSG_BAD_FUSION = "Некорректные веса объединения"
 MSG_FUSION_BUSY = "Не удалось применить веса объединения, повторите попытку"
 
 PENDING_MAX = 512  # frame ids awaiting a result per session (dropped ids are pruned by newer results)
-
-
-def face_to_wire(face: FaceResult) -> dict:
-    return {
-        "track_id": face.track_id,
-        "box": [int(v) for v in face.box],
-        "face": face.face,
-        "face_label": face.face_label,
-        "fused": face.fused,
-        "fused_label": face.fused_label,
-        "confidence": face.confidence,
-    }
 
 
 def audio_to_wire(audio: AudioResult) -> dict:
@@ -92,13 +81,15 @@ def parse_fusion(obj: dict) -> Optional[tuple[float, float]]:
     return out[0] / total, out[1] / total
 
 
-def frame_result_to_wire(res: FrameResult, capture_ts: float, proc_ms: float) -> dict:
+def frame_result_to_wire(res: FrameResult, capture_ts: float, proc_ms: float, ages: Optional[TrackAges] = None) -> dict:
+    # Without ages (tests, pruned frames) every track counts as old enough.
+    age = ages.update([f.track_id for f in res.faces], res.ts) if ages is not None else {}
     return {
         "type": "frame_result",
         "frame_id": res.frame_id,
         "capture_ts": capture_ts,
         "proc_ms": round(proc_ms, 2),
-        "faces": [face_to_wire(f) for f in res.faces],
+        "faces": [face_to_wire(f, age.get(f.track_id, MIN_TRACK_AGE_S)) for f in res.faces],
         "audio": audio_to_wire(res.audio) if res.audio is not None else None,  # None: no window attached
     }
 
@@ -119,6 +110,7 @@ class LiveConnection:
         self.pending: OrderedDict[int, tuple[float, float]] = OrderedDict()
         self.not_started_reported = False
         self.fusion: Optional[tuple[float, float]] = None  # set by `config`; None = worker defaults
+        self.ages = TrackAges()  # track first-seen times of the current session (face `decision`)
 
     # ---- main
 
@@ -144,6 +136,7 @@ class LiveConnection:
         """Finish the current session (if any): store record, then the worker source."""
         sid, self.source_id = self.source_id, None
         self.pending.clear()
+        self.ages.clear()
         self.not_started_reported = False
         if sid is None:
             return
@@ -323,7 +316,7 @@ class LiveConnection:
     def _frame_result(self, res: FrameResult) -> dict:
         entry = self.pending.get(res.frame_id)
         if entry is None:  # pruned: fall back to the worker's view
-            return frame_result_to_wire(res, res.ts * 1000.0, res.timings.get("total", 0.0))
+            return frame_result_to_wire(res, res.ts * 1000.0, res.timings.get("total", 0.0), self.ages)
         capture_ts, t_recv = entry
         # This result answers its frame and supersedes every older pending (dropped) frame.
         while self.pending:
@@ -331,7 +324,7 @@ class LiveConnection:
             if t > t_recv:
                 break
             del self.pending[fid]
-        return frame_result_to_wire(res, capture_ts, (time.perf_counter() - t_recv) * 1000.0)
+        return frame_result_to_wire(res, capture_ts, (time.perf_counter() - t_recv) * 1000.0, self.ages)
 
 
 @router.websocket("/ws/live")

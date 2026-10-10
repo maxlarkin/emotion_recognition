@@ -1,5 +1,7 @@
 # CPU (default):  docker compose up
 # GPU (CUDA):     docker compose --profile gpu up
+# Demo cameras:   docker compose --profile cpu --profile demo-cams up   (or --profile gpu --profile demo-cams)
+#                 DEFAULT_STREAMS="$(cat demo-videos/demo-cams.json)" seeds them into an empty stream list.
 # The committed .env sets COMPOSE_PROFILES=cpu; an explicit --profile flag replaces it,
 # so exactly one backend (CPU or GPU) runs and answers at host "backend".
 name: emotion-recognition
@@ -20,6 +22,8 @@ services:
       args:
         VARIANT: cpu
     image: emotion-recognition/backend:cpu
+    environment:
+      DEFAULT_STREAMS: ${DEFAULT_STREAMS:-}
     volumes:
       - data:/data
     networks:
@@ -34,12 +38,30 @@ services:
       args:
         VARIANT: gpu
     image: emotion-recognition/backend:gpu
+    environment:
+      DEFAULT_STREAMS: ${DEFAULT_STREAMS:-}
     gpus: all
     volumes:
       - data:/data
     networks:
       default:
         aliases: [backend]
+    restart: unless-stopped
+
+  # --- demo-cams: MediaMTX plus a camera emulator publishing synthetic RTSP cameras (story 1.7) ---
+  mediamtx:
+    profiles: ["demo-cams"]
+    image: bluenviron/mediamtx:1.21.1-ffmpeg
+    restart: unless-stopped
+
+  camera-emulator:
+    profiles: ["demo-cams"]
+    image: bluenviron/mediamtx:1.21.1-ffmpeg
+    entrypoint: ["/bin/sh", "/demo/demo-cams.sh"]
+    volumes:
+      - ./demo-videos:/demo:ro,z
+      - ./backend/bench/data:/src:ro,z
+    depends_on: [mediamtx]
     restart: unless-stopped
 
 volumes:

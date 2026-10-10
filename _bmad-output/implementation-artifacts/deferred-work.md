@@ -24,3 +24,9 @@
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/6-ui-shell-design-system-and-screens-on-mock-data.md`
   summary: No interaction tests for toolbar menus (Esc, outside click), the unsaved-settings guard, or timeline/table/player sync.
   evidence: The frontend has no DOM harness (jsdom or testing-library); these were checked by hand in headless Chrome. Add a harness before UI behaviour grows further.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/7-rtsp-ingest-with-camera-profiles-and-stream-management.md`
+  summary: No regression test covers the RTSP media-clock re-anchoring on a PTS jump.
+  evidence: `sources/rtsp.run` re-anchors when media time moves more than 2 s, but the generated test clips cannot carry a PTS discontinuity (the muxer rejects non-monotonic timestamps). Feed a fake container or a mediamtx stream restart in story 1.8 to cover it.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/7-rtsp-ingest-with-camera-profiles-and-stream-management.md`
+  summary: With 3 demo streams at 5 fps the worker delivers ~3.3–4 results/s per stream on GPU and ~2/s on CPU.
+  evidence: All streams get the same rate, because the worker is bound by YuNet running on CPU at 1920/2560 detection sizes (backend at ~940 % CPU on the CPU image). This is the throughput work `stack.md` (Detection cost) assigns to story 1.8.

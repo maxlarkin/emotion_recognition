@@ -2,7 +2,8 @@
 title: 'RTSP ingest with camera profiles and stream management'
 type: 'feature'
 created: '2026-10-10'
-status: 'draft'
+status: 'done'
+baseline_commit: '5c8a473ae0fad7ee3190c4fc5255b94aaddf8d3a'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -83,16 +84,16 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `backend/sources/rtsp.py` -- `RtspSource` thread: open (TCP, 5 s timeout, NVDEC try → CPU), decode, sample to fps, scale to detection size, tile (≤ 640) cache by frame_id, audio resample/chunk, media-clock timestamps, stop flag; `probe(url)` for the test endpoint -- ingest.
-- [ ] `backend/app/streams.py` -- `StreamManager`: CRUD + validation + masking, persistence via store, `DEFAULT_STREAMS` seed, per-stream run loop (hub register, backoff, status), result handling (face wire + decision/face_px with box rescale to tile, JPEG encode in a thread, store writes, fan-out to WS clients), session lifecycle -- core.
-- [ ] `backend/app/system_load.py` -- psutil/NVML snapshot shared by REST and WS -- system load.
-- [ ] `backend/app/api/streams.py`, `backend/app/api/system.py`, `backend/app/ws/streams.py` -- routes per `interfaces.md`; WS client with latest-per-stream buffer, subscribe filter, 1 s system ticks, initial statuses on connect -- API.
-- [ ] `backend/app/store.py`, `backend/app/main.py`, `backend/app/ws/live.py` -- `streams` table + accessors; wiring; `decision`/`face_px` on live faces -- integration.
-- [ ] `backend/requirements-stream.txt` (av pinned), `backend/Dockerfile` -- separate install layer -- dependency.
-- [ ] `docker-compose.yml`, `demo-videos/demo-cams.sh` (or emulator command), `.env.example`, `scripts/check-compose.sh` -- `demo-cams` profile: pinned `bluenviron/mediamtx:1.21.1-ffmpeg` for mediamtx and the emulator; three synthetic cameras (webcam 640×480 with audio, sector 1920×1080 with audio, security 2560×1440 small face, no audio) at 10 fps; example `DEFAULT_STREAMS` -- demo.
-- [ ] `backend/tests/test_streams.py` (+ `test_rtsp_source.py`) -- matrix rows with a fake worker and a fake/generated source (PyAV can decode a local file or `testsrc` through the same code path) -- tests.
-- [ ] `frontend/src/api/index.ts`, `real.ts`, `real.test.ts`, `streamsSocket.ts`, `state/appData.ts` (+ test) -- switch, adapters tested, resync/stale -- frontend.
-- [ ] `AGENTS.md` commands section -- how to run `demo-cams` (`--profile cpu --profile demo-cams`) -- docs.
+- [x] `backend/sources/rtsp.py` -- `RtspSource` thread: open (TCP, 5 s timeout, NVDEC try → CPU), decode, sample to fps, scale to detection size, tile (≤ 640) cache by frame_id, audio resample/chunk, media-clock timestamps, stop flag; `probe(url)` for the test endpoint -- ingest.
+- [x] `backend/app/streams.py` -- `StreamManager`: CRUD + validation + masking, persistence via store, `DEFAULT_STREAMS` seed, per-stream run loop (hub register, backoff, status), result handling (face wire + decision/face_px with box rescale to tile, JPEG encode in a thread, store writes, fan-out to WS clients), session lifecycle -- core.
+- [x] `backend/app/system_load.py` -- psutil/NVML snapshot shared by REST and WS -- system load.
+- [x] `backend/app/api/streams.py`, `backend/app/api/system.py`, `backend/app/ws/streams.py` -- routes per `interfaces.md`; WS client with latest-per-stream buffer, subscribe filter, 1 s system ticks, initial statuses on connect -- API.
+- [x] `backend/app/store.py`, `backend/app/main.py`, `backend/app/ws/live.py` -- `streams` table + accessors; wiring; `decision`/`face_px` on live faces -- integration.
+- [x] `backend/requirements-stream.txt` (av pinned), `backend/Dockerfile` -- separate install layer -- dependency.
+- [x] `docker-compose.yml`, `demo-videos/demo-cams.sh` (or emulator command), `.env.example`, `scripts/check-compose.sh` -- `demo-cams` profile: pinned `bluenviron/mediamtx:1.21.1-ffmpeg` for mediamtx and the emulator; three synthetic cameras (webcam 640×480 with audio, sector 1920×1080 with audio, security 2560×1440 small face, no audio) at 10 fps; example `DEFAULT_STREAMS` -- demo.
+- [x] `backend/tests/test_streams.py` (+ `test_rtsp_source.py`) -- matrix rows with a fake worker and a fake/generated source (PyAV can decode a local file or `testsrc` through the same code path) -- tests.
+- [x] `frontend/src/api/index.ts`, `real.ts`, `real.test.ts`, `streamsSocket.ts`, `state/appData.ts` (+ test) -- switch, adapters tested, resync/stale -- frontend.
+- [x] `AGENTS.md` commands section -- how to run `demo-cams` (`--profile cpu --profile demo-cams`) -- docs.
 
 **Acceptance Criteria:**
 - Given `docker compose --profile cpu --profile demo-cams up` (and the GPU equivalent), when the UI opens, then the three demo cameras appear on `/streams` with analysed frames, boxes, fps and p50/p95, and their sessions are exportable after delete.
@@ -118,6 +119,44 @@ Fan-out: the manager keeps, per WS client, `dict[stream_id → (jpeg, result)]` 
 
 ## Implementation Notes
 
+- Implemented inline (no subagent). Backend: `sources/rtsp.py` (decode loop, `probe`), `app/streams.py` (manager + validation), `app/faces.py` (decision/face_px, shared with `/ws/live`), `app/system_load.py`, `app/api/streams.py`, `app/api/system.py`, `app/ws/streams.py`; `store.py` gains `streams` and `meta` tables. PyAV `av==18.1.0` in `requirements-stream.txt`, own Docker layer (placed before the weights layer, so a PyAV bump re-fetches weights but never torch).
+- Demo: `demo-videos/demo-cams.sh` publishes cam1 webcam 640×480 + audio, cam2 sector 1920×1080 + audio, cam3 security 2560×1440 without audio, built live from `bench/data`; `demo-videos/demo-cams.json` is the `DEFAULT_STREAMS` list; AGENTS.md documents the commands. One pinned image `bluenviron/mediamtx:1.21.1-ffmpeg` serves MediaMTX and the emulator.
+- NVDEC (AC2): on the RTX 3050 GPU profile all three demo streams opened with `decode=nvdec` (log `stream … opened: …, decode=nvdec`); the CPU image decodes on CPU. The PyAV 18.1.0 wheel ships FFmpeg with the cuda hwaccel.
+- Isolation (AC3, GPU profile): killing the cam3 publisher → cam3 `reconnecting` («Поток закончился. Повтор через 1 с», then «Поток не найден по этому адресу») and back to `running` after ~6 s; cam1/cam2 kept producing (3.9 results/s each while cam3 was down).
+- Throughput (recorded for story 1.8, not a 1.7 criterion): 3 demo streams at analysis_fps 5 give ~3.3–3.5 results/s each on GPU (p50 ~360 ms, p95 ~470–520 ms in the browser) and ~2.1/s on CPU (backend ~940 % CPU). All streams get the same rate: the worker is bound by YuNet on CPU at 1920/2560 detection sizes, which `stack.md` (Detection cost) assigns to story 1.8 (YuNet on ORT CUDA or detect every 2nd frame).
+- Frontend: `MOCKED.streams`/`system` = false; adapters covered by `src/api/real.test.ts`; `/ws/streams` client reports open/closed, AppData clears feeds on close and reloads streams/incidents after a reconnect; a stream row is reread when it turns `running` (audio, resolution, decode are known only then). Mocked events still carry demo stream ids, so `knownIncidents` hides incidents of unknown streams until story 1.10; the mocked stream log answers for any id.
+- Verified: `pytest -q` 153 passed (24 stream + 6 source tests new); `npm test` 124 passed; `npm run build` + URL grep empty; `scripts/check-compose.sh` four profiles ok; CPU and GPU profiles with demo-cams in Docker, grid and stream detail in Chrome with real frames, boxes, voice and latency.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+Layers: blind-hunter (BH), edge-case-hunter (EC), verification-gap (VG). Route: P patched, D deferred, R rejected.
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---|---|---|---|
+| 1 | `mask_url` 500 on a non-numeric port; IPv6 brackets lost (EC, BH) | high | `parts.port` raised in `row()`; now regex replaces only the password span, tested | P |
+| 2 | Masked `***` saved as the password on edit, accepted on create (EC, BH) | medium | `unmask_url` restores the stored password; create rejects `:***@` (422), tested | P |
+| 3 | Concurrent PATCH/DELETE race resurrects deleted streams / KeyError (BH, EC) | medium | Awaits between read and write; per-stream `asyncio.Lock` on update/delete/reconnect | P |
+| 4 | Hub source leaked when halted during `register` (VG, BH, EC) | medium | Thread now unregisters and exits if stopped after registering | P |
+| 5 | After WorkerGone the thread keeps decoding; status flips error→connecting (VG, BH, EC) | medium | WorkerGone now stops the thread, finishes the session, keeps `error`; tested | P |
+| 6 | Results dropped from the session when the tile was evicted (BH) | medium | Decode time/scale kept apart from tiles (256 vs 16); recorded without a tile | P |
+| 7 | Stale results of a halted session reach the next one (EC) | low | Queue drained in `_halt` | P |
+| 8 | `_run` racing `_halt` (EC) | low | Mutations now serialised by the per-stream lock | P |
+| 9 | Probe threads starve the default executor; «за 5 с» vs 6 s (BH, EC, VG) | medium | Own 2-thread pool, slot counter released when the probe really ends, text without a number | P |
+| 10 | JPEG encoded for streams nobody watches; unbounded backlog (BH, EC) | low | Encode only for clients that want the stream; skip WS push above 4 queued results | P |
+| 11 | PTS jump back/forward skips all frames (BH, EC) | medium | Clock re-anchors on jumps > 2 s and resets the sampler | P |
+| 12 | Audio chunk timestamps drift after gaps (BH, EC) | low | Cutter restarts a chunk when packet time departs > 100 ms; tested | P |
+| 13 | Probe returns ok with resolution 0×0 (EC) | low | Raises «Не удалось прочитать кадр» | P |
+| 14 | Track age resets on one missed detection (EC) | low | Tracks forgotten only after 1 s unseen; tested | P |
+| 15 | Seed flag burned by an all-invalid DEFAULT_STREAMS (BH) | low | Flag set only when a stream was saved; tested | P |
+| 16 | `/ws/streams` deque drops statuses (BH) | medium | Statuses coalesced per stream, system latest-only, events queued | P |
+| 17 | Other tabs not told about rename/delete; refresh storm on 20 cameras (BH) | low | Frontend rereads the list on any status change, coalesced (500 ms) | P |
+| 18 | Floats accepted as settings; name length before strip; looser test URL check; unused `MSG_DISABLED` (BH) | low | Fixed; float test added | P |
+| 19 | No test for /ws/live `decision`/`face_px` (VG, BH) | medium | `test_frame_decision_abstains_then_none` | P |
+| 20 | No test for re-enable / disabled create+restart / url and camera-type restart (VG) | medium | Three tests added | P |
+| 21 | Socket connection events untested (VG) | medium | `src/api/streamsSocket.test.ts` with a fake WebSocket | P |
+| 22 | Subscribe test asserted nothing; small-face test could pass on track age (BH) | low | Asserts statuses of unsubscribed streams; reads a result older than 1.5 s | P |
+| 23 | Test helpers imported from `test_ws_live` (BH) | low | Developer convenience, no named breakage; moving fixtures is more than a correction | R |
+| 24 | Sprint status `in-progress` while spec `in-review`; `.env` lacks DEFAULT_STREAMS (BH) | false | Sprint moves to `review` at step 5 by design; DEFAULT_STREAMS stays out of `.env` on purpose (documented in `.env.example`, AGENTS.md) | R |
+| 25 | No regression test for the media-clock jump (self) | low | Needs a clip with a PTS discontinuity; muxers reject one | D |

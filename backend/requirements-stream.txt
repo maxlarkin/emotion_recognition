@@ -1,0 +1,4 @@
+# RTSP ingest (CAP-10). Installed in its own Docker layer after the torch/onnxruntime layer, so
+# adding or bumping it does not re-download torch. The wheel bundles FFmpeg (with the CUDA hwaccel
+# for NVDEC; the CPU decoders are used when no GPU is available).
+av==18.1.0

@@ -20,16 +20,28 @@ export function decodeStreamFrame(buf: ArrayBuffer): StreamFrame | null {
   return { stream_id, frame_id, jpeg: new Uint8Array(buf, 7 + idLen) };
 }
 
-export function connectStreamsSocket(onMessage: (m: StreamsMessage) => void, onFrame?: (f: StreamFrame) => void): () => void {
+/** Connection changes: `open` after every (re)connect (`first` only once), `closed` when it drops. */
+export type ConnectionEvent = { type: "open"; first: boolean } | { type: "closed" };
+
+export function connectStreamsSocket(
+  onMessage: (m: StreamsMessage) => void,
+  onFrame?: (f: StreamFrame) => void,
+  onConnection?: (e: ConnectionEvent) => void,
+): () => void {
   let ws: WebSocket | null = null;
   let closed = false;
   let retry = 0;
   let timer = 0;
+  let opened = false;
   const open = () => {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${proto}//${location.host}/ws/streams`);
     ws.binaryType = "arraybuffer";
-    ws.onopen = () => (retry = 0);
+    ws.onopen = () => {
+      retry = 0;
+      onConnection?.({ type: "open", first: !opened });
+      opened = true;
+    };
     ws.onmessage = (e) => {
       if (typeof e.data === "string") {
         try {
@@ -44,6 +56,7 @@ export function connectStreamsSocket(onMessage: (m: StreamsMessage) => void, onF
     };
     ws.onclose = () => {
       if (closed) return;
+      onConnection?.({ type: "closed" });
       timer = window.setTimeout(open, Math.min(30000, 1000 * 2 ** retry++));
     };
   };

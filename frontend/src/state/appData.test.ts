@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, DEFAULT_STREAM_SETTINGS, type EmotionEvent, type Stream, type StreamsMessage } from "../api";
-import { AppData } from "./appData";
+import type { ConnectionEvent } from "../api/streamsSocket";
+import { AppData, knownIncidents } from "./appData";
 
 const stream: Stream = {
   id: "cam1", name: "Ресепшн", site: "Тверская", url: "rtsp://x", camera_type: "sector", settings: DEFAULT_STREAM_SETTINGS,
@@ -13,10 +14,12 @@ const incident: EmotionEvent = {
 };
 
 /** AppData wired to a stub socket; returns a function that pushes /ws/streams messages. */
-async function wired(): Promise<{ data: AppData; push: (m: StreamsMessage) => void }> {
+async function wired(): Promise<{ data: AppData; push: (m: StreamsMessage) => void; conn: (e: ConnectionEvent) => void }> {
   let push: (m: StreamsMessage) => void = () => {};
-  vi.spyOn(api, "connectStreams").mockImplementation((onMessage) => {
+  let conn: (e: ConnectionEvent) => void = () => {};
+  vi.spyOn(api, "connectStreams").mockImplementation((onMessage, _onFrame, onConnection) => {
     push = onMessage;
+    conn = onConnection ?? conn;
     return () => {};
   });
   vi.spyOn(api, "listStreams").mockResolvedValue([stream]);
@@ -25,7 +28,7 @@ async function wired(): Promise<{ data: AppData; push: (m: StreamsMessage) => vo
   const data = new AppData();
   data.start();
   await data.refreshStreams();
-  return { data, push: (m) => push(m) };
+  return { data, push: (m) => push(m), conn: (e) => conn(e) };
 }
 
 afterEach(() => {
@@ -49,10 +52,15 @@ describe("AppData /ws/streams handling", () => {
     const { data, push } = await wired();
     push({ type: "stream_result", stream_id: "cam1", frame_id: 1, decode_ts: Date.now() - 100, emit_ts: Date.now(), faces: [], audio: null, fps: 5 });
     expect(data.feed("cam1").stats.p50).not.toBeNull();
+    const before = vi.mocked(api.listStreams).mock.calls.length;
     push({ type: "stream_status", stream_id: "cam1", state: "error" });
     expect(data.stream("cam1")?.state).toBe("error");
     expect(data.feed("cam1").result).toBeNull();
     expect(data.feed("cam1").stats.p50).toBeNull();
+    // the stub window runs timers at once; the real one coalesces a burst into one reload
+    expect(vi.mocked(api.listStreams).mock.calls.length).toBe(before + 1);
+    push({ type: "stream_status", stream_id: "cam1", state: "running" });
+    expect(vi.mocked(api.listStreams).mock.calls.length).toBe(before + 2);
   });
 
   it("corrects latency by the server clock offset from system messages", async () => {
@@ -64,5 +72,31 @@ describe("AppData /ws/streams handling", () => {
     const p50 = data.feed("cam1").stats.p50!;
     expect(p50).toBeGreaterThanOrEqual(190);
     expect(p50).toBeLessThan(400);
+  });
+});
+
+describe("AppData connection handling", () => {
+  it("drops stale feeds while disconnected and reloads streams and incidents after a reconnect", async () => {
+    const { data, push, conn } = await wired();
+    push({ type: "stream_result", stream_id: "cam1", frame_id: 1, decode_ts: Date.now() - 50, emit_ts: Date.now(), faces: [], audio: null, fps: 5 });
+    expect(data.feed("cam1").result).not.toBeNull();
+    conn({ type: "closed" });
+    expect(data.feed("cam1").result).toBeNull();
+    const streams = vi.mocked(api.listStreams).mock.calls.length;
+    const events = vi.mocked(api.listEvents).mock.calls.length;
+    conn({ type: "open", first: false });
+    expect(vi.mocked(api.listStreams).mock.calls.length).toBe(streams + 1);
+    expect(vi.mocked(api.listEvents).mock.calls.length).toBe(events + 1);
+    conn({ type: "open", first: true }); // the first open needs no reload
+    expect(vi.mocked(api.listStreams).mock.calls.length).toBe(streams + 1);
+  });
+});
+
+describe("knownIncidents", () => {
+  it("hides incidents of streams that do not exist", () => {
+    const other = { ...incident, event_id: "e2", stream_id: "ghost" };
+    const file = { ...incident, event_id: "e3", stream_id: null };
+    expect(knownIncidents([incident, other, file], [stream]).map((e) => e.event_id)).toEqual(["e1", "e3"]);
+    expect(knownIncidents([other], null)).toHaveLength(1);
   });
 });

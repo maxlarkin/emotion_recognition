@@ -18,7 +18,7 @@ import {
   type SystemLoad,
   type Timeline,
 } from "../types";
-import type { StreamFrame } from "../streamsSocket";
+import type { ConnectionEvent, StreamFrame } from "../streamsSocket";
 import { DEMO_FILES, DEMO_STREAMS, demoStream } from "./data";
 import { applyRule, makeProbs, negativeSum, newRuleState, rng, stepStream, topEmotion, type SimStream } from "./sim";
 
@@ -277,7 +277,8 @@ export async function testStream(url: string): Promise<StreamTestResult> {
 }
 
 export async function fetchStreamLog(id: string, intervalS: number, limit = 50): Promise<StreamLogRow[]> {
-  const sim = findSim(id);
+  // Streams may be real while the log is still mocked: unknown ids get a generic demo log.
+  const sim = state.sims.find((x) => x.stream.id === id) ?? { stream: { state: "running" }, faceShare: 0.05, maxTracks: 2 };
   if (sim.stream.state !== "running") return delay([]);
   const r = rng(id.length * 31 + intervalS);
   const now = Math.floor(Date.now() / (intervalS * 1000)) * intervalS * 1000;
@@ -413,7 +414,7 @@ function startEmitter() {
 }
 
 /** Mock of `/ws/streams`: same messages, no binary frames (tiles show a placeholder). */
-export function connectStreams(onMessage: Listener, _onFrame?: (f: StreamFrame) => void): () => void {
+export function connectStreams(onMessage: Listener, _onFrame?: (f: StreamFrame) => void, _onConnection?: (e: ConnectionEvent) => void): () => void {
   listeners.add(onMessage);
   if (listeners.size === 1) startEmitter();
   else for (const sim of state.sims) onMessage({ type: "stream_status", stream_id: sim.stream.id, state: sim.stream.state });

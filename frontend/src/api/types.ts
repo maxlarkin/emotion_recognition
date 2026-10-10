@@ -41,6 +41,7 @@ export interface Stream {
   fps: number;
   has_audio: boolean;
   source_resolution: [number, number] | null;
+  decode?: "nvdec" | "cpu" | null; // decode mode of the last open (GPU image tries NVDEC)
   session_id: string | null;
 }
 

@@ -8,8 +8,8 @@ export * from "./types";
 export { deleteSession, exportUrl, fetchHealth, fetchSessions } from "./real";
 
 const MOCKED = {
-  streams: true, // /api/streams*, /ws/streams — story 1.7
-  system: true, // /api/system — story 1.7
+  streams: false, // /api/streams*, /ws/streams — real since story 1.7
+  system: false, // /api/system — real since story 1.7
   events: true, // /api/events*, incident ack — story 1.10
   settings: true, // /api/settings — story 1.10
   streamLog: true, // /api/streams/{id}/log — story 1.10

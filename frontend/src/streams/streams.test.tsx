@@ -134,6 +134,6 @@ describe("empty streams state", () => {
     expect(html).toContain("Добавить поток");
     expect(html).toContain('href="/analyze"');
     expect(html).toContain("Проанализировать запись");
-    expect(html).toContain("Демо-данные");
+    expect(html).not.toContain("Демо-данные"); // streams are served by the real backend since story 1.7
   });
 });

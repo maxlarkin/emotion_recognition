@@ -59,6 +59,19 @@ CREATE TABLE IF NOT EXISTS audio_windows (
     label      TEXT,
     PRIMARY KEY (session_id, ts_ms)
 );
+CREATE TABLE IF NOT EXISTS streams (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    site        TEXT NOT NULL,
+    url         TEXT NOT NULL,   -- with credentials; masked only in API responses
+    camera_type TEXT NOT NULL,
+    settings    TEXT NOT NULL,   -- JSON StreamSettings
+    created_at  REAL NOT NULL    -- server epoch ms; list order
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 _STOP = object()
@@ -229,6 +242,40 @@ class SessionStore:
 
         self._put(op, fut)
         return fut.result(30.0)
+
+    # ------------------------------------------------------------------ streams (CAP-10, blocking)
+
+    def _write(self, op: Callable[[sqlite3.Connection], Any]) -> Any:
+        """Run one write on the writer thread and wait for it (call off the loop)."""
+        fut: Future = Future()
+        self._put(op, fut)
+        return fut.result(30.0)
+
+    def load_streams(self) -> list[dict]:
+        rows = self._read("SELECT id, name, site, url, camera_type, settings, created_at FROM streams ORDER BY created_at")
+        return [
+            {"id": r[0], "name": r[1], "site": r[2], "url": r[3], "camera_type": r[4], "settings": json.loads(r[5]), "created_at": r[6]}
+            for r in rows
+        ]
+
+    def save_stream(self, rec: dict) -> None:
+        """Insert or replace one stream record (keys as returned by load_streams)."""
+        self._write(
+            lambda c: c.execute(
+                "INSERT OR REPLACE INTO streams (id, name, site, url, camera_type, settings, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (rec["id"], rec["name"], rec["site"], rec["url"], rec["camera_type"], json.dumps(rec["settings"]), rec["created_at"]),
+            )
+        )
+
+    def delete_stream(self, stream_id: str) -> None:
+        self._write(lambda c: c.execute("DELETE FROM streams WHERE id = ?", (stream_id,)))
+
+    def get_meta(self, key: str) -> Optional[str]:
+        rows = self._read("SELECT value FROM meta WHERE key = ?", (key,))
+        return rows[0][0] if rows else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        self._write(lambda c: c.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value)))
 
     def _run(self) -> None:
         c = self._wconn
