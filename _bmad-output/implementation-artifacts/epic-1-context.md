@@ -15,15 +15,16 @@ Deliver an offline, Docker-only prototype for a quality manager who oversees cli
 - Story 1.5: Session persistence and CSV/JSON export
 - Story 1.6: UI shell, design system and screens on mock data
 - Story 1.7: RTSP ingest with camera profiles and stream management
-- Story 1.8: Twenty-camera demo set and throughput
-- Story 1.9: Multi-camera grid and stream detail on live data with system load
-- Story 1.10: Emotion event engine, incidents and journal
-- Story 1.11: Recorded video upload queue, analysis and synced playback
-- Story 1.12: Offline and cross-platform hardening
-- Story 1.13: Per-profile capacity benchmark and report
-- Story 1.14: Accuracy evaluation with face-size sweep
-- Story 1.15: Media quality regulation per camera type
-- Story 1.16: Hardware plan for 30-50 cameras and outlook to 3000
+- Story 1.8: Twenty-camera demo clip set
+- Story 1.9: Throughput for the twenty-camera mix
+- Story 1.10: Multi-camera grid and stream detail on live data with system load
+- Story 1.11: Emotion event engine, incidents and journal
+- Story 1.12: Recorded video upload queue, analysis and synced playback
+- Story 1.13: Offline and cross-platform hardening
+- Story 1.14: Per-profile capacity benchmark and report
+- Story 1.15: Accuracy evaluation with face-size sweep
+- Story 1.16: Media quality regulation per camera type
+- Story 1.17: Hardware plan for 30-50 cameras and outlook to 3000
 
 ## Requirements & Constraints
 
@@ -100,9 +101,9 @@ Deliver an offline, Docker-only prototype for a quality manager who oversees cli
 ## Cross-Story Dependencies
 
 - **1.1–1.5 are done.** They provide the compose skeleton, the shared worker, live video and live audio. Later stories reuse the worker seam; they do not fork it.
-- **1.5 (persistence and export)** underpins file sessions (1.11), rtsp sessions (1.7) and the event store (1.10). Add the `stream_id` column now.
-- **UI:** 1.6 builds every screen on mocks; 1.7, 1.9, 1.10 and 1.11 replace mocks with real endpoints and must keep the 1.6 API module shapes.
-- **Streams:** 1.7 adds RTSP backend ingest and stream management. 1.8 builds the 20-clip mix and tunes the pipeline. 1.9 wires the grid and detail screens to live data.
-- **Events:** 1.10 needs fused smoothed results from every source. The event WS message travels on `/ws/streams`.
-- **Hardening:** 1.12 verifies offline operation for everything, including the demo-cams profile and the journal.
-- **Docs chain:** 1.13 (benchmark) feeds 1.16 (hardware plan), and 1.14 (face-size sweep) feeds 1.15 (media regulation).
+- **1.5 (persistence and export)** underpins file sessions (1.12), rtsp sessions (1.7) and the event store (1.11). Add the `stream_id` column now.
+- **UI:** 1.6 builds every screen on mocks; 1.7, 1.10, 1.11 and 1.12 replace mocks with real endpoints and must keep the 1.6 API module shapes.
+- **Streams:** 1.7 adds RTSP backend ingest and stream management. 1.8 builds the 20-clip mix, 1.9 tunes throughput (CUDA YuNet, detect-every-N, shared-memory frames). 1.10 wires the grid and detail screens to live data.
+- **Events:** 1.11 needs fused smoothed results from every source. The event WS message travels on `/ws/streams`.
+- **Hardening:** 1.13 verifies offline operation for everything, including the demo-cams profile and the journal.
+- **Docs chain:** 1.14 (benchmark) feeds 1.17 (hardware plan), and 1.15 (face-size sweep) feeds 1.16 (media regulation).

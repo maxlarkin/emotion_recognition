@@ -30,3 +30,6 @@
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/7-rtsp-ingest-with-camera-profiles-and-stream-management.md`
   summary: With 3 demo streams at 5 fps the worker delivers ~3.3–4 results/s per stream on GPU and ~2/s on CPU.
   evidence: All streams get the same rate, because the worker is bound by YuNet running on CPU at 1920/2560 detection sizes (backend at ~940 % CPU on the CPU image). This is the throughput work `stack.md` (Detection cost) assigns to story 1.8.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/8-twenty-camera-demo-set-and-throughput.md`
+  summary: Throughput for the 20-stream mix (YuNet on the ORT CUDA EP, detection every Nth frame for large profiles, shared-memory frame transport, 10-minute before/after numbers) was split out of story 1.8.
+  evidence: The user chose to split. The work is now story 1.9 «Throughput for the twenty-camera mix» in stories.yaml. Measured on the RTX 3050, YuNet CUDA takes 2.7/12/20.5 ms at 640/1920/2560, and the full mix with detection on every frame needs ~1.2 s of GPU per second.

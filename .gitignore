@@ -25,3 +25,7 @@ frontend/dist/
 .idea/
 .vscode/
 .DS_Store
+
+# Demo clips (story 1.8): downloaded sources and encoded clips are never committed
+demo-videos/cache/
+demo-videos/clips/

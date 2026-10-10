@@ -41,54 +41,60 @@
   done_checkpoint: false
   invoke_dev_with: camera_type defaults to sector. Verify NVDEC decode via PyAV hwaccel on the RTX 3050 and record whether it works; CPU decode must remain the fallback. Switch the frontend stream endpoints from mocks to the real API.
 - id: '8'
-  title: Twenty-camera demo set and throughput
-  description: Build the 20-stream demo mix (clip prep script encoding per camera profile, emulator looping with -c copy, DEFAULT_STREAMS) and tune the pipeline until the mix meets CAP-10 numbers on the GPU profile (camera-profiles.md 20-stream demo mix, stack.md Demo cameras and Detection cost).
+  title: Twenty-camera demo clip set
+  description: 'Build the 20-stream demo mix from openly licensed clips with faces and Russian speech: pinned source list, prep script that mines negative/positive windows with the project models and encodes per camera profile, emulator looping 20 streams with -c copy, DEFAULT_STREAMS and attribution (camera-profiles.md 20-stream demo mix, stack.md Demo cameras).'
   spec_checkpoint: true
   done_checkpoint: true
-  invoke_dev_with: Find openly licensed (Creative Commons or public domain) clips with faces, Russian speech and clear negative and positive moments; record source URL, author and licence per clip in demo-videos/ATTRIBUTION.md; stop and report if no suitable clips are found. Run the mix for 10 min; if any stream falls below 5 fps or proc_ms p95 exceeds 100 ms, apply the detection fallback from stack.md and report the numbers before and after.
+  invoke_dev_with: Record source URL, author and licence per clip in demo-videos/ATTRIBUTION.md; avoid political and war content; report in demo-videos/segments.md which negative and positive windows the model finds.
 - id: '9'
+  title: Throughput for the twenty-camera mix
+  description: 'Make the 20-stream mix meet CAP-10 on the GPU profile: YuNet on the ONNX Runtime CUDA EP, detection every Nth frame for large profiles with tracker-carried boxes, shared-memory frame transport to the worker, with 10-minute before/after measurements (stack.md Detection cost, CAP-10).'
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: Run the mix for 10 min after each step and record per-stream fps, proc_ms p95, decode-to-result p95, GPU util and VRAM; if the numbers are not met, report the bottleneck.
+- id: '10'
   title: Multi-camera grid and stream detail on live data with system load
   description: 'Wire the grid and stream detail screens to /ws/streams and /api/system: 20 tiles with analysed frames, boxes, facial/vocal/fused emotions, per-stream FPS and p50/p95, visitor cards, camera/processing block, add/remove and settings from the UI (CAP-10 UI, ui.md).'
   spec_checkpoint: false
   done_checkpoint: true
   invoke_dev_with: 'Demo milestone: run the 20-stream mix for 10 min on the GPU profile and report per-stream fps and p95 latency in the completion report.'
-- id: '10'
+- id: '11'
   title: Emotion event engine, incidents and journal
   description: Implement the event rule and per-face decision states, settings API, event persistence with incident state and ack, the event WS message, /api/events with filters and export, the stream interval log, and wire the journal, bell, incident banner and settings screens (CAP-11, stack.md Emotion events, interfaces.md).
   spec_checkpoint: true
   done_checkpoint: true
   invoke_dev_with: Events come from every source, including webcam and file sessions. Never store face images. Show in the completion report that the demo clips' negative and positive moments each produce an event.
-- id: '11'
+- id: '12'
   title: Recorded video upload queue, analysis and synced playback
   description: Upload endpoint with queued file jobs and progress, synced playback overlay, emotion chart, episode timeline and table from session events, export reuse; wire the analyze screen (CAP-3, ui.md File analysis).
   spec_checkpoint: false
   done_checkpoint: true
   invoke_dev_with: 'Cover edge cases: no audio track, no faces, unsupported codec returns failed status with a message.'
-- id: '12'
+- id: '13'
   title: Offline and cross-platform hardening
   description: GPU-to-CPU fallback with UI warning, offline verification with network disabled (including the 20-camera demo-cams profile and the event journal), Windows Docker Desktop (WSL2) run check, README run guide (CAP-5 full).
   spec_checkpoint: false
   done_checkpoint: true
   invoke_dev_with: Grep built frontend for external URLs; any CDN or remote font reference fails the story.
-- id: '13'
+- id: '14'
   title: Per-profile capacity benchmark and report
   description: Extend bench to measure detection per profile size, decode cost CPU vs NVDEC, and the maximum parallel streams per camera profile at 5 fps with and without audio on CPU and GPU, writing docs/benchmark-report.md (CAP-6 full).
   spec_checkpoint: false
   done_checkpoint: false
   invoke_dev_with: ''
-- id: '14'
+- id: '15'
   title: Accuracy evaluation with face-size sweep
   description: Script computing UAR, macro-F1 and confusion matrices for FER and SER on public test subsets plus the FER face-size sweep (16-100 px) for 7 classes and 3 groups, writing docs/evaluation-report.md (CAP-7).
   spec_checkpoint: true
   done_checkpoint: false
   invoke_dev_with: Datasets are not bundled in images; script takes local dataset paths. Document how to obtain each dataset.
-- id: '15'
+- id: '16'
   title: Media quality regulation per camera type
   description: Write docs/media-requirements.md with minimum and recommended parameters per camera type, derived from the CAP-7 sweep through pixels-per-metre and research.md section 4.2 (CAP-8, camera-profiles.md).
   spec_checkpoint: false
   done_checkpoint: true
   invoke_dev_with: ''
-- id: '16'
+- id: '17'
   title: Hardware plan for 30-50 cameras and outlook to 3000
   description: Write docs/scaling-plan.md with per-profile node capacity from benchmark-report.md, single-server vs multi-node hardware and cost for 30-50 cameras, edge-plus-centre architecture for 3000, the alert and ticket adapter seam, and one recommended stack (CAP-9).
   spec_checkpoint: false
