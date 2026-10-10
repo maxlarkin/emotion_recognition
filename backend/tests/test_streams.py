@@ -452,3 +452,11 @@ def test_track_age_survives_one_missed_detection():
     assert a.update([1], 0.8)[1] == pytest.approx(0.8)
     a.update([], 2.0)
     assert a.update([1], 2.2)[1] == 0.0  # gone for more than 1 s: a new track
+
+
+def test_detect_every_follows_the_camera_type(client, source, fake_worker):
+    with running(client) as c:
+        web, sec = add(c, camera_type="webcam"), add(c, camera_type="security")
+        wait_for(lambda: len(fake_worker.detect_every) == 2)
+        by_stream = {sid: fake_worker.detect_every[c.app.state.streams.runtimes[sid].hub_sid] for sid in (web, sec)}
+        assert by_stream == {web: 1, sec: 3}

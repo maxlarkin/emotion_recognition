@@ -2,7 +2,8 @@
 title: 'Throughput for the twenty-camera mix'
 type: 'feature'
 created: '2026-10-11'
-status: 'draft'
+status: 'in-progress'
+baseline_commit: 'a25dd69af089a780aa02377513b03f8cc87fda73'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -67,12 +68,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `backend/inference/detector.py` (+ `tests/test_detector_cuda.py`, models marker) -- `CudaYuNet` (pad to 32, NCHW float32, priors, `sqrt(cls·obj)`, decode, NMS 0.3, top-k, clip) + parity test + factory with fallback -- GPU detection.
-- [ ] `backend/inference/worker.py`, `app/inference_hub.py`, `app/streams.py`, `tests/conftest.py` (+ unit tests) -- `detect_every` per source with carried boxes -- detection cadence.
-- [ ] `backend/inference/shm_ring.py` (+ tests: write/read, resize, overwrite detection, cleanup), `worker.py` -- shared-memory frames -- transport.
-- [ ] `backend/app/streams.py`, `interfaces.md` -- `proc_p95_ms` in the stream row -- inference-time evidence.
-- [ ] `backend/bench/streams_ws.py` -- `/ws/streams` recorder (fps, decode-to-result p50/p95, `proc_p95_ms` from `/api/streams`, system load) -- measurement.
-- [ ] `docs/benchmark-report.md`, Implementation Notes -- step table (baseline from story 1.8, step 1, step 2, step 3 / final 10 min, CPU reference) -- evidence.
+- [x] `backend/inference/detector.py` (+ `tests/test_detector_cuda.py`, models marker) -- `CudaYuNet` (pad to 32, NCHW float32, priors, `sqrt(cls·obj)`, decode, NMS 0.3, top-k, clip) + parity test + factory with fallback -- GPU detection.
+- [x] `backend/inference/worker.py`, `app/inference_hub.py`, `app/streams.py`, `tests/conftest.py` (+ unit tests) -- `detect_every` per source with carried boxes -- detection cadence.
+- [x] `backend/inference/shm_ring.py` (+ tests: write/read, resize, overwrite detection, cleanup), `worker.py` -- shared-memory frames -- transport.
+- [x] `backend/app/streams.py`, `interfaces.md` -- `proc_p95_ms` in the stream row -- inference-time evidence.
+- [x] `backend/bench/streams_ws.py` -- `/ws/streams` recorder (fps, decode-to-result p50/p95, `proc_p95_ms` from `/api/streams`, system load) -- measurement.
+- [x] `docs/benchmark-report.md`, Implementation Notes -- step table (baseline from story 1.8, step 1, step 2, step 3 / final 10 min, CPU reference) -- evidence.
 
 **Acceptance Criteria:**
 - Given the GPU profile with all 20 demo streams, when it runs for 10 min, then min per-stream fps ≥ 5, `proc_ms` p95 ≤ 100 ms and decode-to-result p95 < 1000 ms. If not met, the report gives the numbers and the bottleneck.
@@ -99,6 +100,15 @@ The parent writes `seq+1` (odd) before the copy into the slot and `seq+2` after 
 - `bench/streams_ws.py --seconds 600` against the GPU profile with 20 streams -- expected: CAP-10 numbers.
 
 ## Implementation Notes
+
+- **CAP-10 is not met on the RTX 3050 laptop.** The final 10-min run with 20 streams gave 1.08 fps per stream (decode→result p95 1346 ms, round time p95 1328 ms). 8 mixed streams reach 4.8–4.9 fps. The full table, the per-part breakdown and the options are in `docs/benchmark-report.md`.
+- **Step 1 (CUDA YuNet).** `inference/detector.py` has `CudaYuNet` with OpenCV-equivalent post-processing; the parity test (`tests/test_detector_cuda.py`, GPU image) passes 4/4, boxes within 2 px. A single ORT session fed alternating sizes gave no results at all: re-planning costs ~1.4 s per round. One session per padded size (≤ 6) fixed it (46 ms per round of three sizes). Input preparation uses `cv2.copyMakeBorder` + `cv2.dnn.blobFromImage`.
+- **Step 2 (detect every N).** `detect_every` reaches the worker with `register` (webcam 1, sector/security 3 from `streams.DETECT_EVERY`; `/ws/live` 1). Carried frames reuse the boxes and ids and run fresh FER; `timings.detected` marks them. Measured: 53–54 % of frames detected, as planned.
+- **Step 3 (shared memory).** `inference/shm_ring.py` (4-slot ring per source, seqlock, parent-owned segments). It is on by default (`SHM_FRAMES=1`; `0` restores pickled frames for comparison). The compose backends get `shm_size: 1gb`. No `psm_*` segments remain after stop (checked after every run and after the model tests). The reader does not unregister from the resource tracker: the spawned worker shares the parent's tracker, and unregistering there dropped the parent's entry.
+- **Tried and reverted:** parallel detection in 4 threads on one CUDA session. cuDNN failed with `CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED` and the worker was killed. Detection stays serial (comment in `Engine.process_frames`).
+- **Evidence tooling:** `bench/streams_ws.py` (recorder, exit 0 only when CAP-10 holds); `proc_p95_ms` in the stream row (`interfaces.md` updated); worker `loop:` log line every 30 s with the per-part breakdown.
+- **Observed but unexplained:** one backend container restart during the capacity check (not flagged as an OOM kill; logs lost on `down`); one NVDEC open "generic error" with CPU-decode fallback.
+- **Verified:** `pytest -q` 195 passed; capped `pytest -m models` 22 passed (real worker over shared memory); CUDA parity 4/4 in the GPU image; GPU runs as in the report; CPU reference run 0.21 fps (audio dominates there).
 
 ## Spec Change Log
 

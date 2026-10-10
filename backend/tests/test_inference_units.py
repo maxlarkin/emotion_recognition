@@ -457,3 +457,47 @@ def test_submit_after_concurrent_stop_raises_runtime_error():
     w._inq = _ClosedQueue()  # stop() closed it, not yet cleared
     with pytest.raises(RuntimeError, match="not running"):
         w.submit_frame("s", np.zeros((4, 4, 3), dtype=np.uint8), frame_id=1)
+
+
+class _CountingDetector:
+    def __init__(self, boxes):
+        self.calls = 0
+        self.boxes = boxes
+
+    def detect(self, image):
+        self.calls += 1
+        return list(self.boxes)
+
+
+def test_detect_every_n_carries_boxes_and_ids():
+    eng = _stub_engine()
+    det = _CountingDetector([(10, 10, 30, 30)])
+    eng.detector = det
+    eng.state("s").detect_every = 3
+    img = np.zeros((80, 80, 3), np.uint8)
+    results = [eng.process_frames([VideoFrame("s", i, 10.0 + i * 0.2, img)])[0] for i in range(6)]
+    assert det.calls == 2  # frames 0 and 3
+    assert [r.timings["detected"] for r in results] == [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+    assert {r.faces[0].track_id for r in results} == {results[0].faces[0].track_id}  # same track throughout
+    assert all(r.faces[0].box == (10, 10, 30, 30) for r in results)
+    # a face gone at the next detection disappears from the results
+    det.boxes = []
+    assert eng.process_frames([VideoFrame("s", 6, 11.2, img)])[0].faces == []
+
+
+def test_detect_every_defaults_to_every_frame():
+    eng = _stub_engine()
+    det = _CountingDetector([(10, 10, 30, 30)])
+    eng.detector = det
+    img = np.zeros((80, 80, 3), np.uint8)
+    for i in range(3):
+        eng.process_frames([VideoFrame("s", i, 10.0 + i * 0.2, img)])
+    assert det.calls == 3
+
+
+def test_register_options_reach_the_slots():
+    slots = worker_mod.SourceSlots()
+    slots.register("a", {"detect_every": 3})
+    assert slots.options["a"] == {"detect_every": 3}
+    slots.unregister("a")
+    assert "a" not in slots.options

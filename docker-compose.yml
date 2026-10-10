@@ -22,6 +22,7 @@ services:
       args:
         VARIANT: cpu
     image: emotion-recognition/backend:cpu
+    shm_size: 1gb  # frame rings (story 1.9): ~25-45 MB per large-camera stream; Docker default is 64 MB
     environment:
       DEFAULT_STREAMS: ${DEFAULT_STREAMS:-}
     volumes:
@@ -38,8 +39,10 @@ services:
       args:
         VARIANT: gpu
     image: emotion-recognition/backend:gpu
+    shm_size: 1gb  # frame rings (story 1.9): ~25-45 MB per large-camera stream; Docker default is 64 MB
     environment:
       DEFAULT_STREAMS: ${DEFAULT_STREAMS:-}
+      SHM_FRAMES: ${SHM_FRAMES:-1}
     gpus: all
     volumes:
       - data:/data

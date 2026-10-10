@@ -24,13 +24,14 @@ import queue
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
 import numpy as np
 
 from app.config import MODEL_FILES, Settings, get_settings
-from inference.detector import FaceDetector
+from inference.detector import make_detector
+from inference.shm_ring import FrameRef, FrameRing, RingReader
 from inference.fer import CUDA_BATCH, FacialEmotion, crop_rgb
 from inference.fusion import EMA_ALPHA, W_AUDIO, W_FACE, FusionWeights, TrackEMA, fuse
 from inference.ser import MIN_SPEECH_RATIO, SpeechEmotion, SpeechWindow, Window
@@ -79,6 +80,9 @@ class WorkerConfig:
     fer_cuda_batch: int = CUDA_BATCH  # fixed FER batch on CUDA (see inference.fer)
     inbound_maxsize: int = 256
     results_maxsize: int = 1024
+    # Frames through per-source shared-memory rings (only a header crosses the queue). False sends
+    # pickled frames, as before story 1.9.
+    shm_frames: bool = field(default_factory=lambda: os.environ.get("SHM_FRAMES", "1") != "0")
 
 
 # ------------------------------------------------------------------------------ device / files
@@ -158,16 +162,18 @@ class SourceSlots:
         self.audio_maxlen = audio_maxlen
         self.lock = threading.Lock()
         self.event = threading.Event()  # set whenever something is pending
-        self.frames: dict[str, Optional[VideoFrame]] = {}
+        self.frames: dict[str, Optional[Union[VideoFrame, FrameRef]]] = {}
         self.audio: dict[str, deque[AudioChunk]] = {}
         self.dropped_frames: dict[str, int] = {}
         self.dropped_audio: dict[str, int] = {}
+        self.options: dict[str, dict] = {}  # per-source options given at registration (detect_every)
         # Ids unregistered since the last take(). A re-registered id stays here, so the engine
         # drops the old per-source state before it sees the new source's inputs.
         self.removed: set[str] = set()
 
-    def register(self, source_id: str) -> None:
+    def register(self, source_id: str, options: Optional[dict] = None) -> None:
         with self.lock:
+            self.options[source_id] = dict(options or {})
             if source_id not in self.frames:
                 self.frames[source_id] = None
                 self.audio[source_id] = deque(maxlen=self.audio_maxlen)
@@ -180,6 +186,7 @@ class SourceSlots:
             self.audio.pop(source_id, None)
             self.dropped_frames.pop(source_id, None)
             self.dropped_audio.pop(source_id, None)
+            self.options.pop(source_id, None)
             self.removed.add(source_id)
         self.event.set()
 
@@ -187,7 +194,7 @@ class SourceSlots:
         with self.lock:
             return source_id in self.frames
 
-    def put_frame(self, frame: VideoFrame) -> bool:
+    def put_frame(self, frame: Union[VideoFrame, FrameRef]) -> bool:
         with self.lock:
             if frame.source_id not in self.frames:
                 return False
@@ -208,7 +215,7 @@ class SourceSlots:
         self.event.set()
         return True
 
-    def take(self) -> tuple[list[VideoFrame], dict[str, list[AudioChunk]], set[str]]:
+    def take(self) -> tuple[list[Union[VideoFrame, FrameRef]], dict[str, list[AudioChunk]], set[str]]:
         with self.lock:
             frames = [f for f in self.frames.values() if f is not None]
             for sid in self.frames:
@@ -233,6 +240,11 @@ class _SourceState:
         self.audio_history: deque[AudioResult] = deque(maxlen=AUDIO_HISTORY)  # by window_end_ts
         self.weights: Optional[FusionWeights] = None  # this source's own; None -> Engine.weights
         self.audio_next_ts: Optional[float] = None  # media time where the previous chunk ended
+        # Detection cadence: detect on every Nth frame, carry the last boxes/ids in between.
+        self.detect_every = 1
+        self.frames_seen = 0
+        self.last_boxes: Optional[list] = None
+        self.last_ids: Optional[list] = None
 
     def reset_audio(self) -> None:
         self.vad = VadStream()
@@ -247,7 +259,7 @@ class Engine:
         self.device = device
         self.config = config
         self.weights = FusionWeights(config.w_face, config.w_audio)
-        self.detector = FaceDetector(settings.model_path("yunet"))
+        self.detector = make_detector(settings.model_path("yunet"), device)
         self.fer = FacialEmotion(settings.model_path("fer"), device=device, cuda_batch=config.fer_cuda_batch)
         self.vad = SileroVAD(settings.model_path("vad"))
         self.ser = SpeechEmotion(settings.model_path("ser"), device=device, fp16=config.ser_fp16)
@@ -351,21 +363,30 @@ class Engine:
         out: list[Union[FrameResult, ErrorResult]] = []
         per_frame = []
         crops: list[np.ndarray] = []
+        # Detection runs serially: concurrent runs of one CUDA session failed in cuDNN (host allocation
+        # errors) on the RTX 3050, and the worker died.
         for fr in frames:
             try:
                 st = self.state(fr.source_id)
                 t0 = time.perf_counter()
-                boxes = self.detector.detect(fr.image)
-                det_ms = (time.perf_counter() - t0) * 1000.0
+                detect = st.last_boxes is None or st.frames_seen % max(1, st.detect_every) == 0
+                st.frames_seen += 1
+                if detect:
+                    boxes, det_own_ms = _timed_detect(self.detector, fr.image)
+                    ids, expired = st.tracker.update(boxes, fr.ts)
+                    st.last_boxes, st.last_ids = boxes, ids
+                else:  # carried frame: last detection's boxes and ids, fresh crops for FER
+                    boxes, ids, expired = st.last_boxes, st.last_ids, []
+                    det_own_ms = 0.0
+                det_ms = det_own_ms if detect else (time.perf_counter() - t0) * 1000.0
                 frame_crops = [crop_rgb(fr.image, b) for b in boxes]
-                ids, expired = st.tracker.update(boxes, fr.ts)
             except Exception as exc:  # noqa: BLE001 - isolate the failing source
                 log.exception("frame failed for %s", fr.source_id)
                 out.append(ErrorResult(fr.source_id, "frame_failed", f"{type(exc).__name__}: {exc}"))
                 continue
             for tid in expired:
                 st.ema.drop(tid)
-            per_frame.append((fr, st, boxes, ids, len(crops), det_ms))
+            per_frame.append((fr, st, boxes, ids, len(crops), det_ms, detect))
             crops.extend(frame_crops)
 
         t0 = time.perf_counter()
@@ -376,7 +397,7 @@ class Engine:
             return out + [ErrorResult(fr.source_id, "frame_failed", f"{type(exc).__name__}: {exc}") for fr, *_ in per_frame]
         fer_ms = (time.perf_counter() - t0) * 1000.0
 
-        for fr, st, boxes, ids, first, det_ms in per_frame:
+        for fr, st, boxes, ids, first, det_ms, detected in per_frame:
             audio = self.audio_for(st, fr.ts)
             audio_vec = from_dict(audio.probs) if audio is not None and audio.probs is not None else None
             faces = []
@@ -398,6 +419,7 @@ class Engine:
             timings = {
                 "queue": max(0.0, (t_start - fr.submit_ts) * 1000.0) if fr.submit_ts else 0.0,
                 "detect": det_ms,
+                "detected": 1.0 if detected else 0.0,
                 "fer": fer_ms,
                 "batch_faces": float(len(crops)),
                 "batch_frames": float(len(frames)),
@@ -408,6 +430,12 @@ class Engine:
 
 
 # ------------------------------------------------------------------------------ child process
+
+
+def _timed_detect(detector, image) -> tuple[list, float]:
+    t0 = time.perf_counter()
+    boxes = detector.detect(image)
+    return boxes, (time.perf_counter() - t0) * 1000.0
 
 
 def _put(outq, item) -> None:
@@ -431,6 +459,45 @@ def _apply_controls(engine: Engine, slots: SourceSlots, removed: set[str], contr
             engine.set_fusion(float(cfg["w_face"]), float(cfg["w_audio"]), sid)
         except Exception as exc:  # noqa: BLE001
             _put(outq, ErrorResult(None, "bad_config", f"{type(exc).__name__}: {exc}"))
+
+
+class _LoopStats:
+    """Logged every STATS_EVERY_S: where the worker's time goes (rounds, frames, detect, FER, audio)."""
+
+    STATS_EVERY_S = 30.0
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.t0 = time.monotonic()
+        self.rounds = self.frames = self.detected = 0
+        self.read_ms = self.frames_ms = self.detect_ms = self.fer_ms = self.audio_ms = self.total_ms = 0.0
+
+    def add(self, n_frames: int, results: list, read_ms: float, frames_ms: float, audio_ms: float, total_ms: float) -> None:
+        if not n_frames and audio_ms < 1.0:
+            return  # idle wake-up
+        self.rounds += 1
+        self.frames += n_frames
+        self.read_ms += read_ms
+        self.frames_ms += frames_ms
+        self.audio_ms += audio_ms
+        self.total_ms += total_ms
+        fr = [r for r in results if isinstance(r, FrameResult)]
+        self.detected += sum(int(r.timings.get("detected", 1)) for r in fr)
+        self.detect_ms += sum(r.timings.get("detect", 0.0) for r in fr)
+        if fr:
+            self.fer_ms += fr[0].timings.get("fer", 0.0)
+        elapsed = time.monotonic() - self.t0
+        if elapsed >= self.STATS_EVERY_S:
+            r = max(1, self.rounds)
+            log.info(
+                "loop: %.1f rounds/s, %.1f frames/round (%.0f%% detected); per round ms: total %.0f, shm read %.1f, "
+                "frames %.0f (detect %.0f, fer %.0f), audio %.0f",
+                self.rounds / elapsed, self.frames / r, 100.0 * self.detected / max(1, self.frames),
+                self.total_ms / r, self.read_ms / r, self.frames_ms / r, self.detect_ms / r, self.fer_ms / r, self.audio_ms / r,
+            )
+            self.reset()
 
 
 def _gpu_name() -> Optional[str]:
@@ -458,19 +525,21 @@ def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
     outq.put(("ready", info))
 
     slots = SourceSlots(config.audio_fifo_chunks)
+    reader = RingReader()
     stop = threading.Event()
     controls: deque[dict] = deque()
 
     def handle(msg: Any) -> None:
         kind, payload = msg
-        if kind == "frame":
+        if kind in ("frame", "frame_shm"):
             if not slots.put_frame(payload):
                 _put(outq, ErrorResult(payload.source_id, "unknown_source", f"unknown source {payload.source_id!r}"))
         elif kind == "audio":
             if not slots.put_audio(payload):
                 _put(outq, ErrorResult(payload.source_id, "unknown_source", f"unknown source {payload.source_id!r}"))
         elif kind == "register":
-            slots.register(payload)
+            sid, options = payload if isinstance(payload, tuple) else (payload, {})
+            slots.register(sid, options)
         elif kind == "unregister":
             slots.unregister(payload)
         elif kind == "config":
@@ -503,15 +572,35 @@ def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
 
     rx = threading.Thread(target=receiver, name="receiver", daemon=True)
     rx.start()
+    stats = _LoopStats()
     while not stop.is_set():
         slots.event.wait(0.1)
-        frames, audio, removed = slots.take()
+        t_round = time.perf_counter()
+        taken, audio, removed = slots.take()
         _apply_controls(engine, slots, removed, controls, outq)
-        for res in engine.process_frames(frames):
+        for sid in removed:
+            reader.forget(sid)
+        t_read = time.perf_counter()
+        frames = []
+        for item in taken:  # resolve shared-memory refs: only the latest frame per source is copied
+            if isinstance(item, FrameRef):
+                image = reader.read(item)
+                if image is None:
+                    continue  # slot overwritten meanwhile: dropped like any stale frame
+                item = VideoFrame(item.source_id, item.frame_id, item.ts, image, submit_ts=item.submit_ts)
+            frames.append(item)
+        for fr in frames:
+            engine.state(fr.source_id).detect_every = int(slots.options.get(fr.source_id, {}).get("detect_every", 1))
+        t_frames = time.perf_counter()
+        results = engine.process_frames(frames)
+        t_audio = time.perf_counter()
+        for res in results:
             _put(outq, res)
         for res in engine.process_audio(audio):
             _put(outq, res)
+        stats.add(len(frames), results, (t_frames - t_read) * 1000, (t_audio - t_frames) * 1000, (time.perf_counter() - t_audio) * 1000, (time.perf_counter() - t_round) * 1000)
     rx.join(timeout=1.0)
+    reader.close()
 
 
 # ------------------------------------------------------------------------------ parent handle
@@ -537,6 +626,7 @@ class InferenceWorker:
         self._proc: Optional[mp.process.BaseProcess] = None
         self._sources: set[str] = set()
         self._frame_ids: dict[str, itertools.count] = {}
+        self._rings: dict[str, FrameRing] = {}  # parent-owned shared-memory rings, one per source
         self._lock = threading.Lock()
         self.info: dict[str, Any] = {}
 
@@ -608,6 +698,10 @@ class InferenceWorker:
             if q is not None:
                 q.cancel_join_thread()
                 q.close()
+        with self._lock:
+            rings, self._rings = list(self._rings.values()), {}
+        for ring in rings:  # unlinked here: the worker never unlinks, even when it dies
+            ring.close()
         self._proc = None
         self._inq = self._outq = None
 
@@ -639,19 +733,25 @@ class InferenceWorker:
 
     # ---- sources
 
-    def register_source(self, source_id: str) -> None:
+    def register_source(self, source_id: str, detect_every: int = 1) -> None:
+        """`detect_every`: run the face detector on every Nth frame of this source (carry boxes in between)."""
         self._require_running()
         with self._lock:
             self._sources.add(source_id)
             self._frame_ids[source_id] = itertools.count(1)
-        self._send(("register", source_id), timeout=5.0)
+        self._send(("register", (source_id, {"detect_every": max(1, int(detect_every))})), timeout=5.0)
 
     def unregister_source(self, source_id: str) -> None:
         self._require_running()
         with self._lock:
             self._sources.discard(source_id)
             self._frame_ids.pop(source_id, None)
-        self._send(("unregister", source_id), timeout=5.0)
+            ring = self._rings.pop(source_id, None)
+        try:
+            self._send(("unregister", source_id), timeout=5.0)
+        finally:
+            if ring is not None:
+                ring.close()  # the worker keeps its mapping until it forgets the source
 
     def _check(self, source_id: str) -> None:
         if source_id not in self._sources:
@@ -671,9 +771,18 @@ class InferenceWorker:
         if frame_id is None:
             frame_id = next(self._frame_ids[source_id])
         now = time.time()
-        frame = VideoFrame(source_id, int(frame_id), now if ts is None else float(ts), image, submit_ts=now)
+        ts = now if ts is None else float(ts)
+        if self.config.shm_frames:
+            with self._lock:
+                ring = self._rings.get(source_id)
+                if ring is None:
+                    ring = self._rings[source_id] = FrameRing()
+            segment, slot, seq, shape = ring.write(image)
+            msg: tuple = ("frame_shm", FrameRef(source_id, int(frame_id), ts, now, segment, slot, seq, shape))
+        else:
+            msg = ("frame", VideoFrame(source_id, int(frame_id), ts, image, submit_ts=now))
         try:
-            self._send(("frame", frame))
+            self._send(msg)
             return True
         except queue.Full:
             return False

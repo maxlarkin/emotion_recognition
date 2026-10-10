@@ -40,6 +40,7 @@ class FakeWorker:
         self.start_gate: Optional[threading.Event] = None
         self.sources: set[str] = set()
         self.registered: list[str] = []
+        self.detect_every: dict[str, int] = {}
         self.unregistered: list[str] = []
         self.submitted: list[tuple[str, int, float, tuple]] = []  # source, frame_id, ts, shape
         self.audio_submitted: list[tuple[str, int, float]] = []  # source, PCM byte count, ts (s)
@@ -66,12 +67,13 @@ class FakeWorker:
     def stop(self) -> None:
         self.stopped = True
 
-    def register_source(self, sid: str) -> None:
+    def register_source(self, sid: str, detect_every: int = 1) -> None:
         if self.dead:
             raise RuntimeError("inference worker is not running")
         with self.lock:
             self.sources.add(sid)
             self.registered.append(sid)
+            self.detect_every[sid] = detect_every
 
     def unregister_source(self, sid: str) -> None:
         if self.dead:

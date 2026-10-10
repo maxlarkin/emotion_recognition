@@ -38,12 +38,15 @@ log = logging.getLogger(__name__)
 
 CAMERA_TYPES = ("webcam", "sector", "security")
 DETECTION_SIZE = {"webcam": 640, "sector": 1920, "security": 2560}  # camera-profiles.md
+# Detector cadence per camera type (story 1.9): large frames detect every 3rd frame, boxes carried between.
+DETECT_EVERY = {"webcam": 1, "sector": 3, "security": 3}
 DEFAULT_SETTINGS = {"enabled": True, "analysis_fps": 5, "detection_size": "auto", "min_face_px": 48}
 BACKOFF_MAX_S = 30.0
 TILES_KEPT = 16  # tiles awaiting their result, per stream (a result without its tile is still recorded)
 META_KEPT = 256  # decode time and scale per frame awaiting its result
 BACKLOG_SKIP_WS = 4  # queued results beyond which a stream stops pushing tiles (it still records them)
 FPS_WINDOW_S = 5.0
+PROC_WINDOW_S = 30.0
 JPEG_QUALITY = 80
 FRAME_HEADER = 0x11
 
@@ -119,7 +122,16 @@ class _Runtime:
     frame_ids: Any = field(default_factory=lambda: itertools.count(1))
     ages: TrackAges = field(default_factory=TrackAges)
     result_times: deque = field(default_factory=deque)
+    proc_ms: deque = field(default_factory=deque)  # (monotonic time, worker timings.total ms)
     consumer: Optional[asyncio.Task] = None
+
+    def proc_p95(self, now: float) -> Optional[float]:
+        while self.proc_ms and now - self.proc_ms[0][0] > PROC_WINDOW_S:
+            self.proc_ms.popleft()
+        if not self.proc_ms:
+            return None
+        vals = sorted(v for _, v in self.proc_ms)
+        return round(vals[min(len(vals) - 1, int(0.95 * len(vals)))], 1)
 
     def fps(self, now: float) -> float:
         while self.result_times and now - self.result_times[0] > FPS_WINDOW_S:
@@ -249,6 +261,7 @@ class StreamManager:
             "has_audio": bool(rt.has_audio),
             "source_resolution": list(rt.source_resolution) if rt.source_resolution else None,
             "decode": rt.decode,
+            "proc_p95_ms": rt.proc_p95(time.monotonic()),
             "session_id": rt.session_id,
         }
 
@@ -385,7 +398,8 @@ class StreamManager:
                 try:
                     if self.hub is None:
                         raise HubUnavailable("failed")
-                    hub_sid = self.hub.register(self.loop, rt.queue)
+                    camera_type = self.records.get(stream_id, {}).get("camera_type", "sector")
+                    hub_sid = self.hub.register(self.loop, rt.queue, detect_every=DETECT_EVERY.get(camera_type, 1))
                     if stop.is_set():  # halted while registering: do not leak the hub source
                         self.hub.unregister(hub_sid)
                         return
@@ -483,6 +497,7 @@ class StreamManager:
         audio = audio_to_wire(res.audio) if res.audio is not None else None
         now = time.monotonic()
         rt.result_times.append(now)
+        rt.proc_ms.append((now, float(res.timings.get("total", 0.0))))
         if rt.session_id is not None and self.store is not None:
             self._store_call(self.store.record_frame, rt.session_id, res.frame_id, decode_ms, faces, audio)
         wanted = [c for c in self.clients if c.wants(stream_id)]

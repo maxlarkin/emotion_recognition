@@ -167,7 +167,7 @@ class InferenceHub:
 
     # ---- sources (thread-safe; may block briefly on the worker queue, so call them off the loop)
 
-    def register(self, loop: asyncio.AbstractEventLoop, queue: asyncio.Queue) -> str:
+    def register(self, loop: asyncio.AbstractEventLoop, queue: asyncio.Queue, detect_every: int = 1) -> str:
         """Create a source whose results go to `queue` on `loop`; raises HubUnavailable unless ready."""
         worker = self._worker
         if self.state != READY or worker is None:
@@ -176,7 +176,7 @@ class InferenceHub:
         with self._lock:
             self._routes[source_id] = _Route(loop, queue)
         try:
-            worker.register_source(source_id)
+            worker.register_source(source_id, detect_every=detect_every)
         except Exception as exc:  # noqa: BLE001 - worker gone
             log.warning("register_source failed: %s", exc)
             with self._lock:
