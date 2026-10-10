@@ -48,7 +48,7 @@ services:
         aliases: [backend]
     restart: unless-stopped
 
-  # --- demo-cams: MediaMTX plus a camera emulator publishing synthetic RTSP cameras (story 1.7) ---
+  # --- demo-cams: MediaMTX plus a camera emulator looping the 20 prepared clips (story 1.8; synthetic fallback) ---
   mediamtx:
     profiles: ["demo-cams"]
     image: bluenviron/mediamtx:1.21.1-ffmpeg

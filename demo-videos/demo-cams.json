@@ -1,5 +1,122 @@
 [
-  {"name": "Касса (веб-камера)", "site": "Демо", "url": "rtsp://mediamtx:8554/cam1", "camera_type": "webcam"},
-  {"name": "Зал (секторная)", "site": "Демо", "url": "rtsp://mediamtx:8554/cam2", "camera_type": "sector"},
-  {"name": "Вход (купольная)", "site": "Демо", "url": "rtsp://mediamtx:8554/cam3", "camera_type": "security"}
+  {
+    "name": "Касса 1",
+    "site": "Тверская",
+    "url": "rtsp://mediamtx:8554/cam1",
+    "camera_type": "webcam"
+  },
+  {
+    "name": "Касса 2",
+    "site": "Арбат",
+    "url": "rtsp://mediamtx:8554/cam2",
+    "camera_type": "webcam"
+  },
+  {
+    "name": "Касса 3",
+    "site": "Ленинский",
+    "url": "rtsp://mediamtx:8554/cam3",
+    "camera_type": "webcam"
+  },
+  {
+    "name": "Касса 4",
+    "site": "Невский",
+    "url": "rtsp://mediamtx:8554/cam4",
+    "camera_type": "webcam"
+  },
+  {
+    "name": "Касса 5",
+    "site": "Садовая",
+    "url": "rtsp://mediamtx:8554/cam5",
+    "camera_type": "webcam"
+  },
+  {
+    "name": "Касса 6",
+    "site": "Тверская",
+    "url": "rtsp://mediamtx:8554/cam6",
+    "camera_type": "webcam"
+  },
+  {
+    "name": "Зал 1",
+    "site": "Арбат",
+    "url": "rtsp://mediamtx:8554/cam7",
+    "camera_type": "sector"
+  },
+  {
+    "name": "Зал 2",
+    "site": "Ленинский",
+    "url": "rtsp://mediamtx:8554/cam8",
+    "camera_type": "sector"
+  },
+  {
+    "name": "Зал 3",
+    "site": "Невский",
+    "url": "rtsp://mediamtx:8554/cam9",
+    "camera_type": "sector"
+  },
+  {
+    "name": "Зал 4",
+    "site": "Садовая",
+    "url": "rtsp://mediamtx:8554/cam10",
+    "camera_type": "sector"
+  },
+  {
+    "name": "Зал 5",
+    "site": "Тверская",
+    "url": "rtsp://mediamtx:8554/cam11",
+    "camera_type": "sector"
+  },
+  {
+    "name": "Зал 6",
+    "site": "Арбат",
+    "url": "rtsp://mediamtx:8554/cam12",
+    "camera_type": "sector"
+  },
+  {
+    "name": "Зал 7",
+    "site": "Ленинский",
+    "url": "rtsp://mediamtx:8554/cam13",
+    "camera_type": "sector"
+  },
+  {
+    "name": "Зал 8",
+    "site": "Невский",
+    "url": "rtsp://mediamtx:8554/cam14",
+    "camera_type": "sector"
+  },
+  {
+    "name": "Вход 1",
+    "site": "Садовая",
+    "url": "rtsp://mediamtx:8554/cam15",
+    "camera_type": "security"
+  },
+  {
+    "name": "Вход 2",
+    "site": "Тверская",
+    "url": "rtsp://mediamtx:8554/cam16",
+    "camera_type": "security"
+  },
+  {
+    "name": "Вход 3",
+    "site": "Арбат",
+    "url": "rtsp://mediamtx:8554/cam17",
+    "camera_type": "security"
+  },
+  {
+    "name": "Вход 4",
+    "site": "Ленинский",
+    "url": "rtsp://mediamtx:8554/cam18",
+    "camera_type": "security"
+  },
+  {
+    "name": "Вход 5",
+    "site": "Невский",
+    "url": "rtsp://mediamtx:8554/cam19",
+    "camera_type": "security"
+  },
+  {
+    "name": "Вход 6",
+    "site": "Садовая",
+    "url": "rtsp://mediamtx:8554/cam20",
+    "camera_type": "security"
+  }
 ]

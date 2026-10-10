@@ -113,13 +113,23 @@ docker compose --profile cpu --profile gpu down  # остановить оба �
 docker compose down -v                        # остановить и удалить данные (sessions, uploads)
 ```
 
-Демо-камеры (профиль `demo-cams`: MediaMTX и эмулятор с тремя синтетическими RTSP-камерами `rtsp://mediamtx:8554/cam1..cam3`). Профиль бэкенда указывайте явно: флаг `--profile` отменяет `COMPOSE_PROFILES` из `.env`. При пустом списке потоков `DEFAULT_STREAMS` добавляет камеры один раз:
+Демо-камеры (профиль `demo-cams`: MediaMTX и эмулятор RTSP-камер `rtsp://mediamtx:8554/cam1..cam20`). Набор из 20 клипов (6 веб-камер, 8 секторных, 6 купольных) готовится один раз при включённой сети: скрипт скачивает открыто лицензированные источники из `demo-videos/sources.json`, проверяет контрольные суммы, размечает негатив и позитив моделями проекта и кодирует клипы под профили камер. Результат: `demo-videos/clips/` (в git не попадает) и отчёт `demo-videos/segments.md`. Без клипов эмулятор публикует три синтетические камеры.
 
 ```bash
-DEFAULT_STREAMS="$(cat demo-videos/demo-cams.json)" docker compose --profile cpu --profile demo-cams up -d
+docker run --rm --gpus all --network host --user "$(id -u):$(id -g)" \
+  -v "$PWD/demo-videos:/demo:z" emotion-recognition/backend:gpu \
+  python scripts/prep_demo_clips.py --demo /demo          # CPU-образ: без --gpus, тег :cpu
+```
+
+Подготовке нужно около 1 ГБ на диске (кэш перекодированных копий 480p; если Commons перекодирует файл, скачивается оригинал, до 3 ГБ). Она занимает около 20 минут на GPU и заметно дольше на CPU. Повторный запуск без сети берёт источники и разметку из `demo-videos/cache/`. Запуск демо. Профиль бэкенда указывайте явно: флаг `--profile` отменяет `COMPOSE_PROFILES` из `.env`. При пустом списке потоков `DEFAULT_STREAMS` добавляет камеры один раз:
+
+```bash
+DEFAULT_STREAMS="$(cat demo-videos/demo-cams.json)" docker compose --profile cpu --profile demo-cams up -d   # 20 потоков
 docker compose --profile gpu --profile demo-cams up -d          # GPU; потоки уже сохранены в volume data
 docker compose --profile cpu --profile gpu --profile demo-cams down
 ```
+
+`DEFAULT_STREAMS` срабатывает только на пустом списке потоков. Если в volume `data` уже есть потоки (например, три синтетические камеры из story 1.7), удалите их в «Настройки → Камеры» или выполните `docker compose down -v`. Без подготовленных клипов эмулятор публикует только cam1..cam3, остальные 17 потоков из списка будут переподключаться. До story 1.9 весь набор из 20 потоков не держит нужную частоту: включайте 4–6 потоков одновременно.
 
 Приложение: http://localhost. Проверка состояния:
 

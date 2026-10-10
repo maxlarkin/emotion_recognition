@@ -2,7 +2,8 @@
 title: 'Twenty-camera demo clip set'
 type: 'feature'
 created: '2026-10-10'
-status: 'draft'
+status: 'in-review'
+baseline_commit: 'fa5a23aca532177fd32395a4cacecffd727400f9'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -60,10 +61,10 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `demo-videos/sources.json` -- pinned sources with SHA-1, licence, author, page URL -- reproducible inputs.
-- [ ] `backend/scripts/prep_demo_clips.py` (+ unit tests for the pure parts: window finder, geometry fit, mix plan) -- download/verify, analyse at 5 fps (faces, FER, SER), find windows by the CAP-11 rule, choose 20 segments by profile (webcam: close faces with audio; sector: medium; security: any face, no audio), encode with PyAV (scale/crop/pad to the band, 10 fps, GOP 20, AAC 16 kHz mono), write `segments.md` -- prep.
-- [ ] `demo-videos/demo-cams.sh`, `demo-cams.json`, `ATTRIBUTION.md`, `.gitignore`, `docker-compose.yml` -- 20-stream `-c copy` loop with synthetic fallback, stream list, attribution, ignores -- demo.
-- [ ] `AGENTS.md` -- prep and demo commands -- docs.
+- [x] `demo-videos/sources.json` -- pinned sources with SHA-1, licence, author, page URL -- reproducible inputs.
+- [x] `backend/scripts/prep_demo_clips.py` (+ unit tests for the pure parts: window finder, geometry fit, mix plan) -- download/verify, analyse at 5 fps (faces, FER, SER), find windows by the CAP-11 rule, choose 20 segments by profile (webcam: close faces with audio; sector: medium; security: any face, no audio), encode with PyAV (scale/crop/pad to the band, 10 fps, GOP 20, AAC 16 kHz mono), write `segments.md` -- prep.
+- [x] `demo-videos/demo-cams.sh`, `demo-cams.json`, `ATTRIBUTION.md`, `.gitignore`, `docker-compose.yml` -- 20-stream `-c copy` loop with synthetic fallback, stream list, attribution, ignores -- demo.
+- [x] `AGENTS.md` -- prep and demo commands -- docs.
 
 **Acceptance Criteria:**
 - Given the prep run in the GPU (or CPU) backend image, when it finishes, then 20 clips exist with profile geometry and `segments.md` lists the negative/positive windows per clip and the achieved median face sizes.
@@ -78,6 +79,15 @@ context:
 - `DEFAULT_STREAMS="$(cat demo-videos/demo-cams.json)" docker compose --profile gpu --profile demo-cams up -d` then `curl -s localhost/api/streams` -- expected: 20 running streams.
 
 ## Implementation Notes
+
+- Sources (`demo-videos/sources.json`, all CC BY 3.0 on Wikimedia Commons): short films «Допрос», «Автобус» (TembAz), «Самоволка» (ВГИК diploma), «Время жить, время умирать», «С чистого листа»; interviews «Страна FM» (Аня Покров, Люся Чеботина) and «Интервью по средам» (Сергей Безруков). The 480p VP9 transcodes are used (825 MB in total, SHA-256 pinned); if a transcode changes, the original upload is used, verified by its Commons SHA-1. Faces are scaled down to the profile bands anyway, so 480p sources are enough.
+- `backend/scripts/prep_demo_clips.py` runs inside the backend image (models on CUDA): it analysed 8 sources (≤ 15 min each, 5 fps, ~34k frames) in 13.5 min and encoded 20 clips in ~7 min. Analyses are cached in `demo-videos/cache/`, so re-planning takes only the encode time. Clips: `demo-videos/clips/cam01..cam20.mp4`, 85 MB, 75 s each, 10 fps, GOP 20, AAC 16 kHz mono on webcam/sector. Report: `demo-videos/segments.md`.
+- Windows found (CAP-11 rule on fused probabilities): films are negative-heavy (e.g. «Время жить…» 97 negative / 1 positive, «Автобус» 70 / 0), interviews positive-heavy («Страна FM» 0 negative / 57 and 30 positive). The FER model reports the negative group (mostly sadness, anger) far more often than a human would; the report says so. The planner scores negative and positive windows the same, takes at most 3 segments per source, and keeps webcam segments to sources whose median face is 60–200 px. Final mix: 13 of 20 clips have a negative window, 14 a positive one, all 8 sources used. Measured median faces are all inside the bands: webcam 135–175 px, sector 72–87 px, security 29–43 px.
+- Emulator: `demo-cams.sh` loops every prepared clip with `-re -stream_loop -1 -c copy`, and falls back to the 3 synthetic cameras when `clips/` is empty. `demo-cams.json` holds 20 streams (cam1–6 webcam, 7–14 sector, 15–20 security, 5 sites). The prep and demo commands are in AGENTS.md.
+- Baseline for story 1.9 (GPU profile, RTX 3050, 20 streams): all 20 streams reached `running`, all decoded with NVDEC. The pipeline then collapsed: only 2/20 streams produced results within 90 s (~0.02 results/s), decode-to-result p50 11.2 s and p95 14.4 s, GPU util 6 %, backend ~1000 % CPU and 6 GB RSS, host RAM 13.6/15 GB used. The cause is the expected bottleneck: YuNet on CPU at 1920/2560 (69/164 ms per frame), plus full-size frames pickled into the worker's 256-deep inbound queue (gigabytes in flight). With 4 streams (2 webcam, 2 sector): 4.5 results/s each, decode-to-result p50 289 ms / p95 388 ms.
+- AC3 check: with those 4 streams, every one (cam1, cam2, cam8, cam13 — each listed with negative windows) showed fused negative probability > 0.6 during the 80 s recording.
+- The volume used for the check now holds the 20 demo streams with 16 disabled (to protect host memory). Re-enable them from Settings › Камеры once story 1.9 lands.
+- Verified: `pytest -q` 177 passed (10 new prep tests); prep run end to end in the GPU image; 20-stream and 4-stream runs in Docker as above.
 
 ## Spec Change Log
 
