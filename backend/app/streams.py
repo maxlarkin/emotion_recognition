@@ -319,6 +319,11 @@ class StreamManager:
         changed = json.dumps({k: new[k] for k in ("url", "camera_type", "settings")}, sort_keys=True) != old
         enabled = new["settings"]["enabled"]
         rt = self.runtimes[stream_id]
+        if changed and rt.hub_sid is not None and new["camera_type"] != rec["camera_type"]:
+            # the detector cadence (detect_every) is fixed at registration: re-register with the new type
+            old_sid, rt.hub_sid = rt.hub_sid, None
+            if self.hub is not None:
+                await asyncio.to_thread(self.hub.unregister, old_sid)
         if not enabled and rt.session_id is not None:
             await self._halt(stream_id)
         elif enabled and (rt.session_id is None or changed):
@@ -388,6 +393,7 @@ class StreamManager:
         rt.session_id = None
         rt.state, rt.message = "stopped", None
         rt.result_times.clear()
+        rt.proc_ms.clear()
         self._broadcast_status(stream_id)
 
     def _thread(self, stream_id: str, rt: _Runtime, gen: int, url: str, det: int, fps: float) -> None:
@@ -498,6 +504,8 @@ class StreamManager:
         now = time.monotonic()
         rt.result_times.append(now)
         rt.proc_ms.append((now, float(res.timings.get("total", 0.0))))
+        while rt.proc_ms and now - rt.proc_ms[0][0] > PROC_WINDOW_S:  # bounded even if nobody reads it
+            rt.proc_ms.popleft()
         if rt.session_id is not None and self.store is not None:
             self._store_call(self.store.record_frame, rt.session_id, res.frame_id, decode_ms, faces, audio)
         wanted = [c for c in self.clients if c.wants(stream_id)]

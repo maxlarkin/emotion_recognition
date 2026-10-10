@@ -2,7 +2,7 @@
 title: 'Throughput for the twenty-camera mix'
 type: 'feature'
 created: '2026-10-11'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'a25dd69af089a780aa02377513b03f8cc87fda73'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -58,7 +58,7 @@ context:
 
 - `backend/inference/detector.py` -- `FaceDetector` (OpenCV). Add `CudaYuNet` with the same `detect(image) -> boxes` surface and a `make_detector(model_path, device)` factory. YuNet 2026may ONNX: input `input [1,3,H,W]` (dynamic H/W, batch 1); outputs `cls_{8,16,32} [1,A,1]`, `obj_*`, `bbox_* [1,A,4]`, `kps_* [1,A,10]`.
 - `backend/inference/worker.py` -- `Engine.__init__` (detector creation), `Engine.process_frames` (detect → crop → tracker → FER → EMA → fusion), `_SourceState` (add frame counter, last boxes/ids, detect_every), `SourceSlots.put_frame`, `_worker_main.handle` (`register` payload, new `frame_shm`), `InferenceWorker.register_source/submit_frame/_kill`.
-- `backend/inference/tracker.py` -- unchanged; carried frames skip `update`.
+- `backend/inference/tracker.py` -- unchanged; carried frames call `update` with the carried boxes (IoU 1 keeps the ids) so tracks outlive slow detection cadences.
 - `backend/app/inference_hub.py` -- `register(loop, queue)` → `register(loop, queue, detect_every=1)`.
 - `backend/app/streams.py` -- passes `detect_every` from `camera_type` in `_thread` when registering.
 - `backend/bench/stages.py` -- existing per-stage bench; add CUDA YuNet stage numbers.
@@ -103,13 +103,31 @@ The parent writes `seq+1` (odd) before the copy into the slot and `seq+2` after 
 
 - **CAP-10 is not met on the RTX 3050 laptop.** The final 10-min run with 20 streams gave 1.08 fps per stream (decode→result p95 1346 ms, round time p95 1328 ms). 8 mixed streams reach 4.8–4.9 fps. The full table, the per-part breakdown and the options are in `docs/benchmark-report.md`.
 - **Step 1 (CUDA YuNet).** `inference/detector.py` has `CudaYuNet` with OpenCV-equivalent post-processing; the parity test (`tests/test_detector_cuda.py`, GPU image) passes 4/4, boxes within 2 px. A single ORT session fed alternating sizes gave no results at all: re-planning costs ~1.4 s per round. One session per padded size (≤ 6) fixed it (46 ms per round of three sizes). Input preparation uses `cv2.copyMakeBorder` + `cv2.dnn.blobFromImage`.
-- **Step 2 (detect every N).** `detect_every` reaches the worker with `register` (webcam 1, sector/security 3 from `streams.DETECT_EVERY`; `/ws/live` 1). Carried frames reuse the boxes and ids and run fresh FER; `timings.detected` marks them. Measured: 53–54 % of frames detected, as planned.
+- **Step 2 (detect every N).** `detect_every` reaches the worker with `register` (webcam 1, sector/security 3 from `streams.DETECT_EVERY`; `/ws/live` 1). Carried frames reuse the boxes, refresh the tracker with them (same ids) and run fresh FER; `timings.detected` marks them. A frame size change or a backwards clock forces detection. Measured: 53–54 % of frames detected, as planned.
 - **Step 3 (shared memory).** `inference/shm_ring.py` (4-slot ring per source, seqlock, parent-owned segments). It is on by default (`SHM_FRAMES=1`; `0` restores pickled frames for comparison). The compose backends get `shm_size: 1gb`. No `psm_*` segments remain after stop (checked after every run and after the model tests). The reader does not unregister from the resource tracker: the spawned worker shares the parent's tracker, and unregistering there dropped the parent's entry.
 - **Tried and reverted:** parallel detection in 4 threads on one CUDA session. cuDNN failed with `CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED` and the worker was killed. Detection stays serial (comment in `Engine.process_frames`).
 - **Evidence tooling:** `bench/streams_ws.py` (recorder, exit 0 only when CAP-10 holds); `proc_p95_ms` in the stream row (`interfaces.md` updated); worker `loop:` log line every 30 s with the per-part breakdown.
 - **Observed but unexplained:** one backend container restart during the capacity check (not flagged as an OOM kill; logs lost on `down`); one NVDEC open "generic error" with CPU-decode fallback.
-- **Verified:** `pytest -q` 195 passed; capped `pytest -m models` 22 passed (real worker over shared memory); CUDA parity 4/4 in the GPU image; GPU runs as in the report; CPU reference run 0.21 fps (audio dominates there).
+- **Verified (after review fixes):** `pytest -q` 202 passed, 4 skipped; capped `pytest -m models` 25 passed, 1 skipped; GPU image after review fixes: CUDA parity + real-worker tests 19 passed (real worker over shared memory); CUDA parity 4/4 in the GPU image; GPU runs as in the report; CPU reference run 0.21 fps (audio dominates there).
 
 ## Spec Change Log
 
 ## Review Triage Log
+
+Iteration 0, three layers (Blind Hunter, Edge Case Hunter, Verification Gap). Patched:
+- Carried boxes survived a frame size change and a failed detection: detection is now forced on a new frame size or a backwards clock, and `last_boxes` is cleared before each detect.
+- Slow streams lost their track ids (detections spaced beyond the tracker's 1 s expiry): carried frames now refresh the tracker with the carried boxes. A first fix capped carrying at 0.8 s, which forced detection on every frame exactly when the worker was overloaded; replaced.
+- `submit_frame` could re-create a ring for a source unregistered meanwhile, and a write racing `close` could touch an unlinked segment: rings take a lock and a `closed` flag, `write` returns None once closed, and the parent checks registration under its lock. Any ring failure falls back to a pickled frame.
+- A full `/dev/shm` raises SIGBUS on write (tmpfs allocates lazily): the free space is checked before a ring is created or grown (64 MB reserve); otherwise frames go pickled. Compose sets `shm_size: 1gb`; AGENTS.md `docker run` lines add `--shm-size=1g`.
+- A bad segment read could end the worker for all sources: the child catches it and drops that frame.
+- `CudaYuNet`: the probe session is no longer cached; the YuNet outputs are checked at start; sessions capped at 4 with a `kSameAsRequested` arena; priors evicted with their session; a failed per-size session falls back to OpenCV for that call.
+- Camera type change kept the old detection cadence: the stream re-registers with the hub.
+- `proc_ms` window grew without a reader: trimmed on append, cleared on halt.
+- Recorder: HTTP polls off the event loop with a timeout, latency only after the first clock offset, fps over the real elapsed time; the docstring says pushes skipped under encoder backlog make fps a lower bound.
+- Tests added: detect cadence edge cases, `parse_register`, `make_detector` fallback, slot options, write after close, and real-worker tests (detect_every reaches the worker, rings unlinked on unregister and stop, full `/dev/shm` falls back).
+
+Rejected:
+- Deriving the cadence from detection size instead of `camera_type`: the frozen intent fixes `camera_type`.
+- Memory barriers for weakly ordered CPUs in the seqlock: the target is x86-64; the limit is documented in `shm_ring.py`.
+
+Deferred (deferred-work.md): a CPU-side parity test of the `CudaYuNet` decode; the 10-min slowdown; the unexplained container restart and NVDEC "generic error"; per-stream analysed-fps counts independent of skipped pushes.

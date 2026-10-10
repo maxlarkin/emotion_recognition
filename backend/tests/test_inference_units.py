@@ -501,3 +501,64 @@ def test_register_options_reach_the_slots():
     assert slots.options["a"] == {"detect_every": 3}
     slots.unregister("a")
     assert "a" not in slots.options
+
+
+def test_slow_streams_keep_their_tracks_between_detections():
+    eng = _stub_engine()
+    det = _CountingDetector([(10, 10, 30, 30)])
+    eng.detector = det
+    eng.state("s").detect_every = 3
+    img = np.zeros((80, 80, 3), np.uint8)
+    # 1 frame per second: detections 3 s apart, beyond the tracker's 1 s expiry; carried frames refresh it
+    ids = [eng.process_frames([VideoFrame("s", i, 10.0 + i, img)])[0].faces[0].track_id for i in range(7)]
+    assert det.calls == 3 and len(set(ids)) == 1
+
+
+def test_frame_size_change_forces_detection():
+    eng = _stub_engine()
+    det = _CountingDetector([(10, 10, 30, 30)])
+    eng.detector = det
+    eng.state("s").detect_every = 3
+    eng.process_frames([VideoFrame("s", 0, 10.0, np.zeros((80, 80, 3), np.uint8))])
+    eng.process_frames([VideoFrame("s", 1, 10.2, np.zeros((120, 160, 3), np.uint8))])
+    assert det.calls == 2
+
+
+def test_failed_detection_leaves_nothing_to_carry():
+    eng = _stub_engine()
+
+    class Failing:
+        def detect(self, image):
+            raise RuntimeError("boom")
+
+    eng.detector = _CountingDetector([(10, 10, 30, 30)])
+    eng.state("s").detect_every = 3
+    img = np.zeros((80, 80, 3), np.uint8)
+    eng.process_frames([VideoFrame("s", 0, 10.0, img)])
+    eng.detector = Failing()
+    eng.state("s").frames_seen = 3  # due for detection
+    assert eng.process_frames([VideoFrame("s", 1, 10.2, img)])[0].kind == "frame_failed"
+    eng.detector = _CountingDetector([])
+    assert eng.process_frames([VideoFrame("s", 2, 10.4, img)])[0].faces == []  # detected again, not carried
+
+
+def test_register_payload_old_and_new_forms():
+    assert worker_mod.parse_register("abc") == ("abc", {})
+    assert worker_mod.parse_register(("abc", {"detect_every": 3})) == ("abc", {"detect_every": 3})
+
+
+def test_make_detector_falls_back_to_opencv(monkeypatch):
+    import inference.detector as det_mod
+
+    class Boom:
+        def __init__(self, path):
+            raise RuntimeError("no CUDA EP")
+
+    class Cpu:
+        def __init__(self, path):
+            self.path = path
+
+    monkeypatch.setattr(det_mod, "CudaYuNet", Boom)
+    monkeypatch.setattr(det_mod, "FaceDetector", Cpu)
+    assert isinstance(det_mod.make_detector("m.onnx", "cuda"), Cpu)
+    assert isinstance(det_mod.make_detector("m.onnx", "cpu"), Cpu)  # never tries CUDA on the CPU device

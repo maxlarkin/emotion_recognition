@@ -139,7 +139,7 @@ The regulation (CAP-8) and hardware plan (CAP-9) documents are in the repo, back
 
 ## Assumptions
 
-- **CAP-10 measured result, accepted on 2026-10-11.** Story 1.9 measured the target laptop (RTX 3050, 4 GB) with CUDA YuNet, detection on every 3rd frame for large profiles and shared-memory frames. The 20-stream mix runs at ~1–1.7 analysed fps per stream (1.08 in the 10-min run), and about 8 mixed streams reach ~5 fps. The bottleneck is detection under GPU contention, with VRAM at its limit. The 20-stream targets stay as goals; these numbers feed CAP-9. Details: `docs/benchmark-report.md`.
+- **CAP-10 measured result, accepted on 2026-10-11.** Story 1.9 measured the target laptop (RTX 3050, 4 GB) with CUDA YuNet, detection on every 3rd frame for large profiles and shared-memory frames. The 20-stream mix runs at 1.5–1.7 analysed fps per stream in 3-min runs and 1.08 in the 10-min run (the slowdown is not explained yet), and about 8 mixed streams reach ~5 fps. The bottleneck is detection under GPU contention, with VRAM at its limit. The 20-stream targets stay as goals; these numbers feed CAP-9. Details: `docs/benchmark-report.md`.
 
 - "Offline" means runtime only. Images are built once with internet access, or transferred with `docker save` / `docker load`.
 - One user and one webcam session at a time. RTSP streams run in parallel with it, but the 20-stream demo does not need the webcam.

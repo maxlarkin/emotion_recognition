@@ -31,7 +31,7 @@ import numpy as np
 
 from app.config import MODEL_FILES, Settings, get_settings
 from inference.detector import make_detector
-from inference.shm_ring import FrameRef, FrameRing, RingReader
+from inference.shm_ring import SLOTS, FrameRef, FrameRing, RingReader
 from inference.fer import CUDA_BATCH, FacialEmotion, crop_rgb
 from inference.fusion import EMA_ALPHA, W_AUDIO, W_FACE, FusionWeights, TrackEMA, fuse
 from inference.ser import MIN_SPEECH_RATIO, SpeechEmotion, SpeechWindow, Window
@@ -190,6 +190,10 @@ class SourceSlots:
             self.removed.add(source_id)
         self.event.set()
 
+    def option(self, source_id: str, key: str, default: Any) -> Any:
+        with self.lock:
+            return self.options.get(source_id, {}).get(key, default)
+
     def registered(self, source_id: str) -> bool:
         with self.lock:
             return source_id in self.frames
@@ -240,11 +244,12 @@ class _SourceState:
         self.audio_history: deque[AudioResult] = deque(maxlen=AUDIO_HISTORY)  # by window_end_ts
         self.weights: Optional[FusionWeights] = None  # this source's own; None -> Engine.weights
         self.audio_next_ts: Optional[float] = None  # media time where the previous chunk ended
-        # Detection cadence: detect on every Nth frame, carry the last boxes/ids in between.
+        # Detection cadence: detect on every Nth frame, carry the last boxes in between.
         self.detect_every = 1
         self.frames_seen = 0
         self.last_boxes: Optional[list] = None
-        self.last_ids: Optional[list] = None
+        self.last_detect_ts: Optional[float] = None
+        self.last_shape: Optional[tuple] = None
 
     def reset_audio(self) -> None:
         self.vad = VadStream()
@@ -369,14 +374,19 @@ class Engine:
             try:
                 st = self.state(fr.source_id)
                 t0 = time.perf_counter()
-                detect = st.last_boxes is None or st.frames_seen % max(1, st.detect_every) == 0
+                detect = needs_detection(st, fr)
                 st.frames_seen += 1
                 if detect:
+                    st.last_boxes = None  # a failing detector must not leave stale boxes to carry
                     boxes, det_own_ms = _timed_detect(self.detector, fr.image)
                     ids, expired = st.tracker.update(boxes, fr.ts)
-                    st.last_boxes, st.last_ids = boxes, ids
-                else:  # carried frame: last detection's boxes and ids, fresh crops for FER
-                    boxes, ids, expired = st.last_boxes, st.last_ids, []
+                    st.last_boxes = boxes
+                    st.last_detect_ts, st.last_shape = fr.ts, fr.image.shape[:2]
+                else:  # carried frame: last detection's boxes, fresh crops for FER
+                    boxes = st.last_boxes
+                    # Refresh the tracks with the carried boxes (IoU 1: same ids), so a slow stream's
+                    # tracks do not expire between detections spaced more than the tracker's 1 s.
+                    ids, expired = st.tracker.update(boxes, fr.ts)
                     det_own_ms = 0.0
                 det_ms = det_own_ms if detect else (time.perf_counter() - t0) * 1000.0
                 frame_crops = [crop_rgb(fr.image, b) for b in boxes]
@@ -430,6 +440,42 @@ class Engine:
 
 
 # ------------------------------------------------------------------------------ child process
+
+
+def parse_register(payload: Any) -> tuple[str, dict]:
+    """`register` payload: a bare source id (before story 1.9) or (source_id, options)."""
+    if isinstance(payload, tuple):
+        sid, options = payload
+        return str(sid), dict(options or {})
+    return str(payload), {}
+
+
+SHM_RESERVE_MB = 64  # left free in /dev/shm for everything else
+
+
+def _shm_free_mb() -> int:
+    import shutil
+
+    try:
+        return int(shutil.disk_usage("/dev/shm").free / 2**20)
+    except OSError:
+        return 0
+
+
+def _shm_fits(nbytes: int) -> bool:
+    """True if /dev/shm has room for `nbytes` more. tmpfs allocates lazily: a full one raises SIGBUS
+    on write instead of failing at creation, so the budget is checked up front."""
+    return _shm_free_mb() - nbytes / 2**20 >= SHM_RESERVE_MB
+
+
+def needs_detection(st: "_SourceState", fr: VideoFrame) -> bool:
+    """Detect on every Nth frame, and also when nothing is carried yet, the frame size changed
+    (carried boxes would be in the old scale) or time went backwards (a new stream clock)."""
+    if st.last_boxes is None or st.last_detect_ts is None:
+        return True
+    if fr.image.shape[:2] != st.last_shape or fr.ts < st.last_detect_ts:
+        return True
+    return st.frames_seen % max(1, st.detect_every) == 0
 
 
 def _timed_detect(detector, image) -> tuple[list, float]:
@@ -522,6 +568,8 @@ def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
     gpu_name = _gpu_name() if device == "cuda" else None
     info = {"device": device, "gpu_name": gpu_name, "pid": os.getpid(), "ser_fp16": engine.ser.fp16}
     log.info("inference worker ready: %s", info)
+    if config.shm_frames:
+        log.info("shared-memory frames: /dev/shm %s MB free", _shm_free_mb())
     outq.put(("ready", info))
 
     slots = SourceSlots(config.audio_fifo_chunks)
@@ -538,8 +586,7 @@ def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
             if not slots.put_audio(payload):
                 _put(outq, ErrorResult(payload.source_id, "unknown_source", f"unknown source {payload.source_id!r}"))
         elif kind == "register":
-            sid, options = payload if isinstance(payload, tuple) else (payload, {})
-            slots.register(sid, options)
+            slots.register(*parse_register(payload))
         elif kind == "unregister":
             slots.unregister(payload)
         elif kind == "config":
@@ -584,13 +631,17 @@ def _worker_main(inq, outq, config: WorkerConfig, settings: Settings) -> None:
         frames = []
         for item in taken:  # resolve shared-memory refs: only the latest frame per source is copied
             if isinstance(item, FrameRef):
-                image = reader.read(item)
+                try:
+                    image = reader.read(item)
+                except Exception:  # noqa: BLE001 - a bad segment must not end the worker for all sources
+                    log.exception("shared-memory read failed for %s", item.source_id)
+                    image = None
                 if image is None:
                     continue  # slot overwritten meanwhile: dropped like any stale frame
                 item = VideoFrame(item.source_id, item.frame_id, item.ts, image, submit_ts=item.submit_ts)
             frames.append(item)
         for fr in frames:
-            engine.state(fr.source_id).detect_every = int(slots.options.get(fr.source_id, {}).get("detect_every", 1))
+            engine.state(fr.source_id).detect_every = int(slots.option(fr.source_id, "detect_every", 1))
         t_frames = time.perf_counter()
         results = engine.process_frames(frames)
         t_audio = time.perf_counter()
@@ -772,14 +823,26 @@ class InferenceWorker:
             frame_id = next(self._frame_ids[source_id])
         now = time.time()
         ts = now if ts is None else float(ts)
+        msg: Optional[tuple] = None
         if self.config.shm_frames:
             with self._lock:
+                if source_id not in self._sources:  # unregistered meanwhile: never re-create its ring
+                    raise KeyError(f"unknown source {source_id!r}")
                 ring = self._rings.get(source_id)
-                if ring is None:
+                if ring is None and _shm_fits(image.nbytes * SLOTS):
                     ring = self._rings[source_id] = FrameRing()
-            segment, slot, seq, shape = ring.write(image)
-            msg: tuple = ("frame_shm", FrameRef(source_id, int(frame_id), ts, now, segment, slot, seq, shape))
-        else:
+            if ring is not None:
+                try:
+                    # growing the ring (new size) needs room for all its slots; refilling it needs none
+                    fits = ring.capacity >= image.nbytes or _shm_fits(image.nbytes * SLOTS)
+                    written = ring.write(image) if fits else None
+                except Exception:  # noqa: BLE001 - closed concurrently, or /dev/shm full: send pickled
+                    log.warning("shared-memory write failed for %s; sending the frame pickled", source_id, exc_info=True)
+                    written = None
+                if written is not None:
+                    segment, slot, seq, shape = written
+                    msg = ("frame_shm", FrameRef(source_id, int(frame_id), ts, now, segment, slot, seq, shape))
+        if msg is None:  # pickled: shared memory off, too small, or the ring was closed
             msg = ("frame", VideoFrame(source_id, int(frame_id), ts, image, submit_ts=now))
         try:
             self._send(msg)

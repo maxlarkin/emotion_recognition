@@ -44,7 +44,7 @@ development_status:
   1-6-ui-shell-design-system-and-screens-on-mock-data: done
   1-7-rtsp-ingest-with-camera-profiles-and-stream-management: done
   1-8-twenty-camera-demo-clip-set: done
-  1-9-throughput-for-the-twenty-camera-mix: in-progress
+  1-9-throughput-for-the-twenty-camera-mix: review
   1-10-multi-camera-grid-and-stream-detail-on-live-data-with-syste: backlog
   1-11-emotion-event-engine-incidents-and-journal: backlog
   1-12-recorded-video-upload-queue-analysis-and-synced-playback: backlog

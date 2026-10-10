@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -82,4 +81,11 @@ def test_reader_never_unlinks():
         assert segment_exists(r.segment)  # still the parent's
     finally:
         ring.close()
-    assert os.path.isdir("/dev/shm")
+
+
+def test_write_after_close_returns_none_and_creates_nothing():
+    ring = FrameRing()
+    ring.write(frame(1))
+    name = ring.shm.name
+    ring.close()
+    assert ring.write(frame(2)) is None and ring.shm is None and not segment_exists(name)

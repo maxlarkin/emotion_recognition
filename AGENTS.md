@@ -178,7 +178,7 @@ MODELS_DIR=$(realpath ../.models) DATA_DIR=/tmp/er-data .venv/bin/uvicorn app.ma
 Альтернатива — бэкенд из собранного образа, порт 8000 проброшен на хост (compose его не публикует):
 
 ```bash
-docker run --rm -p 8000:8000 emotion-recognition/backend:cpu
+docker run --rm --shm-size=1g -p 8000:8000 emotion-recognition/backend:cpu
 ```
 
 ### Проверка офлайн-режима
@@ -186,7 +186,7 @@ docker run --rm -p 8000:8000 emotion-recognition/backend:cpu
 Без отключения сети хоста (бэкенд в контейнере вообще без сети):
 
 ```bash
-docker run -d --name er-offline --network none emotion-recognition/backend:cpu
+docker run -d --name er-offline --network none --shm-size=1g emotion-recognition/backend:cpu
 docker exec er-offline python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/api/health').read().decode())"
 docker rm -fv er-offline   # -v: удалить и анонимный volume /data
 ```

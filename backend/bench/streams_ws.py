@@ -31,21 +31,28 @@ def pct(vals: list[float], q: float) -> Optional[float]:
 async def record(url: str, seconds: float) -> int:
     import websockets
 
-    streams = {s["id"]: s for s in json.load(urllib.request.urlopen(f"{url}/api/streams"))}
+    def get_rows() -> list:
+        with urllib.request.urlopen(f"{url}/api/streams", timeout=5) as r:
+            return json.load(r)
+
+    streams = {s["id"]: s for s in await asyncio.to_thread(get_rows)}
     running = [sid for sid, s in streams.items() if s["settings"]["enabled"]]
     counts: dict[str, int] = {sid: 0 for sid in running}
     latency: list[float] = []
     proc: list[float] = []
     system: list[dict] = []
-    offset = 0.0
+    offset: Optional[float] = None  # client - server clock, known after the first `system` message
     ws_url = url.replace("http", "ws", 1) + "/ws/streams"
     t0 = time.time()
     next_poll = t0 + 10
     async with websockets.connect(ws_url, max_size=None) as ws:
         while (now := time.time()) - t0 < seconds:
             if now >= next_poll:
-                rows = json.load(urllib.request.urlopen(f"{url}/api/streams"))
-                proc += [r["proc_p95_ms"] for r in rows if r.get("proc_p95_ms") is not None]
+                try:
+                    rows = await asyncio.to_thread(get_rows)
+                    proc += [r["proc_p95_ms"] for r in rows if r.get("proc_p95_ms") is not None]
+                except OSError as exc:
+                    print(f"poll failed: {exc}", file=sys.stderr)
                 next_poll = now + 10
             try:
                 msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
@@ -56,17 +63,21 @@ async def record(url: str, seconds: float) -> int:
             o = json.loads(msg)
             if o["type"] == "stream_result":
                 counts[o["stream_id"]] = counts.get(o["stream_id"], 0) + 1
-                latency.append(time.time() * 1000 - (o["decode_ts"] + offset))
+                if offset is not None:  # earlier samples cannot be clock-corrected
+                    latency.append(time.time() * 1000 - (o["decode_ts"] + offset))
             elif o["type"] == "system":
                 offset = time.time() * 1000 - o["server_ts"]
                 system.append(o)
-    fps = {sid: counts.get(sid, 0) / seconds for sid in running}
+    elapsed = time.time() - t0
+    # Counts delivered stream_result messages: the server skips the push (not the analysis) when a
+    # stream's encoding falls behind, so this is a lower bound of the analysed fps.
+    fps = {sid: counts.get(sid, 0) / elapsed for sid in running}
     by_type: dict[str, list[float]] = {}
     for sid, f in fps.items():
         by_type.setdefault(streams[sid]["camera_type"], []).append(f)
     gpu = [s["gpu_util_pct"] for s in system if s["gpu_util_pct"] is not None]
     report = {
-        "seconds": seconds,
+        "seconds": round(elapsed, 1),
         "streams": len(running),
         "fps_min": round(min(fps.values()), 2) if fps else 0,
         "fps_median": round(statistics.median(fps.values()), 2) if fps else 0,

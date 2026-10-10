@@ -33,3 +33,15 @@
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/8-twenty-camera-demo-set-and-throughput.md`
   summary: Throughput for the 20-stream mix (YuNet on the ORT CUDA EP, detection every Nth frame for large profiles, shared-memory frame transport, 10-minute before/after numbers) was split out of story 1.8.
   evidence: The user chose to split. The work is now story 1.9 «Throughput for the twenty-camera mix» in stories.yaml. Measured on the RTX 3050, YuNet CUDA takes 2.7/12/20.5 ms at 640/1920/2560, and the full mix with detection on every frame needs ~1.2 s of GPU per second.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/9-throughput-for-the-twenty-camera-mix.md`
+  summary: The `CudaYuNet` decode (priors, `sqrt(cls·obj)`, NMS, clip) is only checked against OpenCV in the GPU image.
+  evidence: `tests/test_detector_cuda.py` needs the CUDA EP. Run the same decode on the CPU EP against `cv2.FaceDetectorYN` so `pytest -m models` on any machine covers it.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/9-throughput-for-the-twenty-camera-mix.md`
+  summary: The 10-min 20-stream run is slower than the 3-min runs (1.08 against 1.54–1.74 fps per stream).
+  evidence: Per-round detection cost grew during the run. Candidates: GPU thermal throttling, VRAM fragmentation at the 4 GB limit, NVDEC contention. Record `nvidia-smi dmon -s pucm` over a 10-min run (story 1.14).
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/9-throughput-for-the-twenty-camera-mix.md`
+  summary: During the story-1.9 measurements the backend container restarted once and one NVDEC open failed with a "generic error".
+  evidence: The restart was not flagged as an OOM kill and the logs were lost on `down`. Keep `docker compose logs` before removing the stack in story 1.14 runs.
+- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/9-throughput-for-the-twenty-camera-mix.md`
+  summary: `bench/streams_ws.py` counts delivered `stream_result` messages, a lower bound of analysed fps when pushes are skipped.
+  evidence: The server skips a push (not the analysis) when a stream's encoding falls behind. An analysed-frame counter in the stream row would give the exact rate.

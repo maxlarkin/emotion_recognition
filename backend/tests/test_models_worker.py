@@ -228,3 +228,59 @@ def test_bad_frame_isolated_to_its_source(worker, col):
     assert worker.alive
 
 
+
+
+# ------------------------------------------------------------------------------ story 1.9: cadence and shared memory
+
+
+def _segment_exists(name: str) -> bool:
+    from pathlib import Path
+
+    return Path("/dev/shm", name.lstrip("/")).exists()
+
+
+def test_detect_every_reaches_the_worker(worker, col):
+    worker.register_source("cad", detect_every=3)
+    try:
+        detected = []
+        for i in range(4):  # 0.2 s apart: within the carry limit
+            worker.submit_frame("cad", FACE, frame_id=i + 1, ts=300.0 + i * 0.2)
+            detected.append(col.frame("cad", i + 1).timings["detected"])
+        assert detected == [1.0, 0.0, 0.0, 1.0]
+    finally:
+        worker.unregister_source("cad")
+
+
+def test_rings_are_unlinked_on_unregister_and_stop(worker, col):
+    from inference.worker import InferenceWorker, WorkerConfig
+
+    worker.register_source("ring")
+    worker.submit_frame("ring", FACE, frame_id=1, ts=400.0)
+    col.frame("ring", 1)
+    name = worker._rings["ring"].shm.name
+    assert _segment_exists(name)
+    worker.unregister_source("ring")
+    assert not _segment_exists(name)
+
+    other = InferenceWorker(SETTINGS, WorkerConfig(device="cpu")).start()
+    try:
+        other.register_source("x")
+        other.submit_frame("x", FACE, frame_id=1, ts=1.0)
+        seg = other._rings["x"].shm.name
+        assert _segment_exists(seg)
+    finally:
+        other.stop()
+    assert not _segment_exists(seg)
+
+
+def test_full_dev_shm_falls_back_to_pickled_frames(worker, col, monkeypatch):
+    import inference.worker as worker_mod
+
+    monkeypatch.setattr(worker_mod, "_shm_fits", lambda nbytes: False)
+    worker.register_source("noshm")
+    try:
+        worker.submit_frame("noshm", FACE, frame_id=1, ts=500.0)
+        assert col.frame("noshm", 1).faces  # still analysed
+        assert "noshm" not in worker._rings
+    finally:
+        worker.unregister_source("noshm")

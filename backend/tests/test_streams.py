@@ -460,3 +460,13 @@ def test_detect_every_follows_the_camera_type(client, source, fake_worker):
         wait_for(lambda: len(fake_worker.detect_every) == 2)
         by_stream = {sid: fake_worker.detect_every[c.app.state.streams.runtimes[sid].hub_sid] for sid in (web, sec)}
         assert by_stream == {web: 1, sec: 3}
+
+
+def test_proc_p95_ms_in_the_row(client, source):
+    with running(client) as c:
+        sid = add(c)
+        assert row(c, sid)["proc_p95_ms"] is None or isinstance(row(c, sid)["proc_p95_ms"], float)
+        wait_for(lambda: row(c, sid)["proc_p95_ms"] is not None)
+        assert row(c, sid)["proc_p95_ms"] == 1.0  # FakeWorker reports timings.total = 1.0
+        c.patch(f"/api/streams/{sid}", json={"settings": {"enabled": False}})
+        assert row(c, sid)["proc_p95_ms"] is None  # cleared with the session

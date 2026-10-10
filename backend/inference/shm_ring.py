@@ -6,11 +6,15 @@ marks it even again and returns a `FrameRef` (segment name, slot, sequence, shap
 queue instead of the image. The worker's `RingReader.read()` copies the slot out and checks the
 sequence before and after the copy; if the parent wrapped the ring meanwhile, the frame is dropped,
 never returned torn. Only the parent unlinks segments (on close, unregister and worker exit).
+
+The seqlock relies on numpy stores becoming visible in program order, which holds on x86-64 (the
+target hardware). On weakly ordered CPUs (ARM) a torn read could pass the check.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from multiprocessing import shared_memory
 from typing import Optional
@@ -38,18 +42,22 @@ class FrameRef:
 
 
 class FrameRing:
-    """Parent side. Not thread-safe per ring: one writer thread per source (the decode thread)."""
+    """Parent side. Writes and close are serialised by a lock: a restarted decode thread may overlap
+    the old one for a moment, and close may come from another thread (unregister, stop)."""
 
     def __init__(self, slots: int = SLOTS):
+        assert slots * 8 <= HEADER_BYTES, "header holds one int64 sequence per slot"
         self.slots = slots
         self.shm: Optional[shared_memory.SharedMemory] = None
         self.capacity = 0
         self.next_slot = 0
+        self.closed = False
+        self._lock = threading.Lock()
 
     def _ensure(self, nbytes: int) -> None:
         if self.shm is not None and nbytes <= self.capacity:
             return
-        self.close()
+        self._release()
         self.capacity = nbytes
         self.shm = shared_memory.SharedMemory(create=True, size=HEADER_BYTES + self.slots * nbytes)
         self._seqs()[:] = 0
@@ -58,8 +66,15 @@ class FrameRing:
         assert self.shm is not None
         return np.ndarray((self.slots,), dtype=np.int64, buffer=self.shm.buf[:HEADER_BYTES])
 
-    def write(self, image: np.ndarray) -> tuple[str, int, int, tuple[int, int, int]]:
-        """Copy `image` (uint8 HxWx3) into the next slot; returns (segment, slot, seq, shape)."""
+    def write(self, image: np.ndarray) -> Optional[tuple[str, int, int, tuple[int, int, int]]]:
+        """Copy `image` (uint8 HxWx3) into the next slot; returns (segment, slot, seq, shape), or None
+        once the ring is closed (the caller sends the frame another way or drops it)."""
+        with self._lock:
+            if self.closed:
+                return None
+            return self._write(image)
+
+    def _write(self, image: np.ndarray) -> tuple[str, int, int, tuple[int, int, int]]:
         image = np.ascontiguousarray(image, dtype=np.uint8)
         self._ensure(image.nbytes)
         assert self.shm is not None
@@ -74,6 +89,11 @@ class FrameRing:
         return self.shm.name, slot, seq + 1, tuple(image.shape)  # type: ignore[return-value]
 
     def close(self) -> None:
+        with self._lock:
+            self.closed = True
+            self._release()
+
+    def _release(self) -> None:
         shm, self.shm = self.shm, None
         if shm is not None:
             try:

@@ -13,15 +13,27 @@ story 1.9.
 - Recorder: `python -m bench.streams_ws --seconds N` (results/s per stream, decode-to-result latency, `proc_p95_ms` of `/api/streams`, system load).
 - `proc_ms` is the worker's time for the whole round, from taking the frames to the results. It covers all streams' frames together, so it is not a per-frame inference time.
 
-| Step | Run | Streams | fps per stream (min / median) | decode→result p50 / p95 | proc p95 (max) | GPU util | VRAM | Notes |
-|---|---|---|---|---|---|---|---|---|
-| Baseline (story 1.8): YuNet on CPU, pickled frames | 90 s | 20 | 0.01 / 0.02 (2 of 20 streams answered) | 11.2 s / 14.4 s | — | 6 % | — | host RAM 13.6 / 15 GB, gigabytes of frames queued |
-| 1: YuNet on the ORT CUDA EP, one session | 180 s | 20 | 0 | — | — | — | 4.0 GB | no result at all |
-| 1b: one CUDA session per input size | 180 s | 20 | 1.74 / 1.74 | 468 ms / 1043 ms | 976 ms | 37 % | 4.05 GB | with detect-every-3, pickled frames (`SHM_FRAMES=0`) |
-| 3: + shared-memory frames | 180 s | 20 | 1.54 / 1.54 | 661 ms / 864 ms | 703 ms | 33 % | 4.07 GB | |
-| Final | **600 s** | 20 | **1.08 / 1.08** | 818 ms / 1346 ms | 1328 ms | 29 % | 4.09 GB | slower than the 3-min run |
-| Capacity check | 120 s | 8 (2 webcam, 3 sector, 3 security) | 4.78 / 4.88 | — / 356 ms | 296 ms | 40 % | — | close to 5 fps |
-| CPU image (reference) | 180 s | 20 | 0.21 / 0.21 | — / 2817 ms | 2768 ms | — | — | per round: detect 959 ms, FER 572 ms, **audio 3271 ms** (GigaAM SER on CPU) |
+| Step | Run | Streams | fps per stream (min / median) | decode→result p50 / p95 | proc p95 (max) | GPU util | VRAM | backend CPU / RSS | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Baseline (story 1.8): YuNet on CPU, pickled frames | 90 s | 20 | 0.01 / 0.02 (2 of 20 streams answered) | 11.2 s / 14.4 s | — | 6 % | — | — | host RAM 13.6 / 15 GB, gigabytes of frames queued |
+| 1: YuNet on the ORT CUDA EP, one session | 180 s | 20 | 0 | — | — | — | 4.0 GB | — | no result at all |
+| 1b: one CUDA session per input size | 180 s | 20 | 1.74 / 1.74 | 468 ms / 1043 ms | 976 ms | 37 % | 4.05 GB | 451 % / 4.5 GiB | with detect-every-3, pickled frames (`SHM_FRAMES=0`) |
+| 3: + shared-memory frames | 180 s | 20 | 1.54 / 1.54 | 661 ms / 864 ms | 703 ms | 33 % | 4.07 GB | 475 % / 4.59 GiB | |
+| Final | **600 s** | 20 | **1.08 / 1.08** | 818 ms / 1346 ms | 1328 ms | 29 % | 4.09 GB | 435 % / 4.56 GiB | slower than the 3-min runs (see below) |
+| Capacity check | 120 s | 8 (2 webcam, 3 sector, 3 security) | 4.78 / 4.88 | — / 356 ms | 296 ms | 40 % | — | — | close to 5 fps |
+| CPU image (reference) | 180 s | 20 | 0.21 / 0.21 | — / 2817 ms | 2768 ms | — | — | — | per round: detect 959 ms, FER 572 ms, **audio 3271 ms** (GigaAM SER on CPU) |
+
+Host RAM stayed at 12.5–12.9 of 15 GB in the GPU runs (the desktop session included), against 13.6 GB in
+the baseline.
+
+Step 2 (detect every N) has no row of its own. Without step 1 the CPU detector gave no usable numbers, so
+step 2 was measured together with it: row 1b is steps 1 + 2. The worker's `timings.detected` showed
+53–54 % of frames detected, as planned.
+
+**The 10-minute run is slower than the 3-minute runs** (1.08 against 1.54–1.74 fps), and the per-round
+detection cost grew during the run. The cause is not identified: thermal throttling of the laptop GPU,
+VRAM fragmentation at the 4 GB limit and NVDEC contention are candidates. A longer run with
+`nvidia-smi dmon` clocks and temperatures is needed to tell them apart.
 
 CAP-10 (20 streams, ≥ 5 fps each, inference p95 ≤ 100 ms, decode-to-result p95 < 1000 ms) is **not met**
 on this laptop. About 8 mixed streams reach ~5 fps.

@@ -12,7 +12,7 @@ import logging
 import threading
 from collections import OrderedDict
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 
@@ -59,7 +59,7 @@ def clip_boxes(raw: np.ndarray, w: int, h: int) -> list[tuple[int, int, int, int
 STRIDES = (8, 16, 32)
 
 
-MAX_SESSIONS = 6  # input sizes kept warm (the demo mix uses 3)
+MAX_SESSIONS = 4  # input sizes kept warm (the demo mix uses 3; each session holds its own arena)
 
 
 class CudaYuNet:
@@ -76,29 +76,41 @@ class CudaYuNet:
         self._sessions: "OrderedDict[tuple[int, int], object]" = OrderedDict()
         self._lock = threading.Lock()  # guards the session/prior caches
         self._priors: dict[tuple[int, int], dict[int, np.ndarray]] = {}
-        probe = self._session((320, 320))  # fails here, not on the first frame, if CUDA is unusable
+        probe = self._new_session()  # fails here, not on the first frame, if CUDA is unusable
         self.input_name = probe.get_inputs()[0].name
         self.output_names = [o.name for o in probe.get_outputs()]
+        missing = {f"{k}_{s}" for k in ("cls", "obj", "bbox") for s in STRIDES} - set(self.output_names)
+        if missing:
+            raise RuntimeError(f"unexpected YuNet outputs, missing {sorted(missing)}")
+        del probe  # not cached: no stream uses its size
+        self._cpu_fallback: Optional[FaceDetector] = None
 
     def _session(self, size: tuple[int, int]):
         with self._lock:
             return self._session_locked(size)
 
-    def _session_locked(self, size: tuple[int, int]):
+    def _new_session(self):
         import onnxruntime as ort
 
+        opts = ort.SessionOptions()
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        # kSameAsRequested: each session's arena grows only as needed (VRAM is the scarce resource)
+        cuda = ("CUDAExecutionProvider", {"arena_extend_strategy": "kSameAsRequested"})
+        sess = ort.InferenceSession(str(self.model_path), sess_options=opts, providers=[cuda])
+        if "CUDAExecutionProvider" not in sess.get_providers():
+            raise RuntimeError("CUDAExecutionProvider not available for YuNet")
+        return sess
+
+    def _session_locked(self, size: tuple[int, int]):
         sess = self._sessions.get(size)
         if sess is not None:
             self._sessions.move_to_end(size)
             return sess
-        opts = ort.SessionOptions()
-        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        sess = ort.InferenceSession(str(self.model_path), sess_options=opts, providers=["CUDAExecutionProvider"])
-        if "CUDAExecutionProvider" not in sess.get_providers():
-            raise RuntimeError("CUDAExecutionProvider not available for YuNet")
+        sess = self._new_session()
         self._sessions[size] = sess
         while len(self._sessions) > MAX_SESSIONS:
-            self._sessions.popitem(last=False)
+            old, _ = self._sessions.popitem(last=False)
+            self._priors.pop(old, None)
         return sess
 
     @staticmethod
@@ -112,15 +124,14 @@ class CudaYuNet:
             cached = self._priors.get(key)
         if cached is not None:
             return cached
-        if True:
-            grids = {}
-            for s in STRIDES:
-                cols, rows = pw // s, ph // s
-                cc, rr = np.meshgrid(np.arange(cols, dtype=np.float32), np.arange(rows, dtype=np.float32))
-                grids[s] = np.stack([cc.ravel(), rr.ravel()], axis=1)
-            with self._lock:
-                self._priors[key] = grids
-            return grids
+        grids = {}
+        for s in STRIDES:
+            cols, rows = pw // s, ph // s
+            cc, rr = np.meshgrid(np.arange(cols, dtype=np.float32), np.arange(rows, dtype=np.float32))
+            grids[s] = np.stack([cc.ravel(), rr.ravel()], axis=1)
+        with self._lock:
+            self._priors[key] = grids
+        return grids
 
     def detect(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
         """BGR image -> face boxes (x, y, w, h), clipped to the frame, non-empty."""
@@ -131,7 +142,13 @@ class CudaYuNet:
         # BGR float32 NCHW, no scaling or mean, zero-padded at the bottom/right (as FaceDetectorYN does)
         padded = image if (pw, ph) == (w, h) else cv2.copyMakeBorder(image, 0, ph - h, 0, pw - w, cv2.BORDER_CONSTANT, value=0)
         blob = cv2.dnn.blobFromImage(padded)
-        sess = self._session((pw, ph))
+        try:
+            sess = self._session((pw, ph))
+        except Exception as exc:  # noqa: BLE001 - e.g. no VRAM left for a new size: detect on the CPU
+            if self._cpu_fallback is None:
+                log.warning("CUDA YuNet session for %dx%d failed (%s); OpenCV for that size", pw, ph, exc)
+                self._cpu_fallback = FaceDetector(self.model_path)
+            return self._cpu_fallback.detect(image)
         outs = dict(zip(self.output_names, sess.run(self.output_names, {self.input_name: blob}), strict=True))
         grids = self._grid(pw, ph)
         boxes, scores = [], []

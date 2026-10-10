@@ -55,7 +55,7 @@ This socket is for viewing only. The server pushes updates for every active stre
 |---|---|---|
 | GET | `/api/health` | `{"status":"ok","device":"cuda"|"cpu","models":{...loaded}}` |
 | POST | `/api/files` | multipart upload; returns `{"session_id"}` and starts analysis |
-| GET | `/api/streams` | list streams: `id, name, site, url (credentials masked), camera_type, settings, state, fps, has_audio, source_resolution ([w,h] or null), decode ("nvdec"|"cpu"|null), proc_p95_ms (worker time per frame, p95 over 30 s, or null), session_id` |
+| GET | `/api/streams` | list streams: `id, name, site, url (credentials masked), camera_type, settings, state, fps, has_audio, source_resolution ([w,h] or null), decode ("nvdec"|"cpu"|null), proc_p95_ms (p95 over 30 s of the worker round that produced each result, all streams' frames batched together, ms; null without results), session_id` |
 | POST | `/api/streams` | `{"name":"Камера 1","site":"Тверская","url":"rtsp://...","camera_type":"webcam"|"sector"|"security","settings":{...}}`; `site` defaults to `""`, `camera_type` to `sector`, `settings` to defaults. Returns `{"id"}`, starts ingest and analysis (unless `settings.enabled` is false), creates a session of kind `rtsp` |
 | PATCH | `/api/streams/{id}` | partial `{name, site, url, camera_type, settings}`; changes to `url`, `camera_type` or `settings` restart only this stream's source. Returns the stream object |
 | POST | `/api/streams/{id}/reconnect` | reconnect now, resetting backoff |
