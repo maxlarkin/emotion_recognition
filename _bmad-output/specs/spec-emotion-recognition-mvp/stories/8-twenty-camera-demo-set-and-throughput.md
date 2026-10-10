@@ -2,7 +2,7 @@
 title: 'Twenty-camera demo clip set'
 type: 'feature'
 created: '2026-10-10'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'fa5a23aca532177fd32395a4cacecffd727400f9'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -82,7 +82,7 @@ context:
 
 - Sources (`demo-videos/sources.json`, all CC BY 3.0 on Wikimedia Commons): short films «Допрос», «Автобус» (TembAz), «Самоволка» (ВГИК diploma), «Время жить, время умирать», «С чистого листа»; interviews «Страна FM» (Аня Покров, Люся Чеботина) and «Интервью по средам» (Сергей Безруков). The 480p VP9 transcodes are used (825 MB in total, SHA-256 pinned); if a transcode changes, the original upload is used, verified by its Commons SHA-1. Faces are scaled down to the profile bands anyway, so 480p sources are enough.
 - `backend/scripts/prep_demo_clips.py` runs inside the backend image (models on CUDA): it analysed 8 sources (≤ 15 min each, 5 fps, ~34k frames) in 13.5 min and encoded 20 clips in ~7 min. Analyses are cached in `demo-videos/cache/`, so re-planning takes only the encode time. Clips: `demo-videos/clips/cam01..cam20.mp4`, 85 MB, 75 s each, 10 fps, GOP 20, AAC 16 kHz mono on webcam/sector. Report: `demo-videos/segments.md`.
-- Windows found (CAP-11 rule on fused probabilities): films are negative-heavy (e.g. «Время жить…» 97 negative / 1 positive, «Автобус» 70 / 0), interviews positive-heavy («Страна FM» 0 negative / 57 and 30 positive). The FER model reports the negative group (mostly sadness, anger) far more often than a human would; the report says so. The planner scores negative and positive windows the same, takes at most 3 segments per source, and keeps webcam segments to sources whose median face is 60–200 px. Final mix: 13 of 20 clips have a negative window, 14 a positive one, all 8 sources used. Measured median faces are all inside the bands: webcam 135–175 px, sector 72–87 px, security 29–43 px.
+- Windows found (CAP-11 rule on fused probabilities): films are negative-heavy (e.g. «Время жить…» 97 negative / 1 positive, «Автобус» 70 / 0), interviews positive-heavy («Страна FM» 0 negative / 57 and 30 positive). The FER model reports the negative group (mostly sadness, anger) far more often than a human would; the report says so. The planner scores negative and positive windows the same, takes at most 3 segments per source, and keeps webcam segments to sources whose median face is 60–200 px. After the review fixes (windows of one moment on several tracks are merged) the final mix has 13 of 20 clips with a negative window and 14 with a positive one, from 7 of the 8 sources («Самоволка» was not chosen; ATTRIBUTION.md marks it as unused). Measured median faces are all inside the bands (webcam 135–175 px, sector 72–87 px, security 29–43 px), and the report flags none outside. Audio and video in every clip both cover 75 s (within 20 ms), so `-stream_loop -c copy` loops without drift.
 - Emulator: `demo-cams.sh` loops every prepared clip with `-re -stream_loop -1 -c copy`, and falls back to the 3 synthetic cameras when `clips/` is empty. `demo-cams.json` holds 20 streams (cam1–6 webcam, 7–14 sector, 15–20 security, 5 sites). The prep and demo commands are in AGENTS.md.
 - Baseline for story 1.9 (GPU profile, RTX 3050, 20 streams): all 20 streams reached `running`, all decoded with NVDEC. The pipeline then collapsed: only 2/20 streams produced results within 90 s (~0.02 results/s), decode-to-result p50 11.2 s and p95 14.4 s, GPU util 6 %, backend ~1000 % CPU and 6 GB RSS, host RAM 13.6/15 GB used. The cause is the expected bottleneck: YuNet on CPU at 1920/2560 (69/164 ms per frame), plus full-size frames pickled into the worker's 256-deep inbound queue (gigabytes in flight). With 4 streams (2 webcam, 2 sector): 4.5 results/s each, decode-to-result p50 289 ms / p95 388 ms.
 - AC3 check: with those 4 streams, every one (cam1, cam2, cam8, cam13 — each listed with negative windows) showed fused negative probability > 0.6 during the 80 s recording.
@@ -92,3 +92,30 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Layers: blind-hunter (BH), edge-case-hunter (EC), verification-gap (VG). Route: P patched, D deferred, R rejected.
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---|---|---|---|
+| 1 | Temp `camNN.part.mp4` matched the emulator glob (BH, EC, VG) | high | Glob `cam*.mp4` + sed gave `cam5.part`; temp is now `.camNN.mp4.part`, script loops cam01..cam20 explicitly | P |
+| 2 | Failed run left a partial clip set (BH, EC, VG) | medium | Old clips deleted first; now staging dir swapped in after all 20 succeed | P |
+| 3 | Missing clip skipped silently instead of retried (BH, VG) | low | Publisher per number now logs the missing file and retries | P |
+| 4 | Offline re-run broken after a Commons re-transcode; fetch errors unnamed; bad original kept (BH, EC) | medium | Verified cached original used first; fetch names the file, checks Content-Length, removes `.part`; bad original deleted; tested | P |
+| 5 | Cached analysis reused for a different file (EC) | low | Analysis records its file name and is redone on mismatch | P |
+| 6 | Encode loop decoded to EOF; audio never flushed or trimmed (BH, EC, VG) | medium | Breaks at the segment end, flushes the resampler, trims both tracks; A/V now 75 s ± 20 ms | P |
+| 7 | Short source produced a short clip silently (EC) | low | Raises below 98 % of the frames; tested | P |
+| 8 | Duplicate windows across track ids inflated counts and scores (BH, EC) | medium | `merge_windows`; tested | P |
+| 9 | Out-of-band or no-face clips not flagged (BH, EC) | medium | `in_band` line in `segments.md`; tested | P |
+| 10 | Wide scaled frame on a narrower canvas lost the face (EC) | low | Paste branch crops that side around the face | P |
+| 11 | `frame.time is None` → all frames at t=0; ErrorResults ignored (EC) | low | Frames without time skipped; errors logged and skipped | P |
+| 12 | `measure_faces` step could be 0 (EC) | low | `max(1, …)` | P |
+| 13 | Clip order not tied to `demo-cams.json` camera types (BH, VG) | medium | `check_stream_list` at prep + order assertion test | P |
+| 14 | `write_report`, `ensure_source`, `encode` untested (VG, BH) | medium | Tests added (19 in the module) | P |
+| 15 | ATTRIBUTION lacked licence links, change note, per-source use; utm params in URLs (BH) | medium | Generated from the plan with licence links, «Changes made», «Used in»; utm stripped | P |
+| 16 | Notes claimed all 8 sources used (BH) | low | Notes corrected: 7 of 8, unused source marked | P |
+| 17 | Sector/security clips mostly flat padding weaken the throughput baseline (BH) | low | Limitation stated in `segments.md` and here; story 1.9 measures with these clips knowingly | P (docs) |
+| 18 | Security windows may not trigger at 25–45 px without audio (EC) | low | Stated in `segments.md`; AC3 checked on webcam/sector | P (docs) |
+| 19 | AGENTS.md: no disk/time note, garbled phrase, seeding over existing streams, synthetic fallback 3 vs 20 (BH, EC) | low | All documented | P |
+| 20 | Synthetic restart log removed; compose comment stale; JSON newlines; unused `speech` field (BH, EC) | low | Restored / updated / fixed / removed | P |
+| 21 | Greedy planner may fail where a valid assignment exists (EC) | low | Real sources plan fine; backtracking adds complexity for a case not met | R |
+| 22 | Test name claimed "prefers negative" (BH) | low | Renamed | P |
