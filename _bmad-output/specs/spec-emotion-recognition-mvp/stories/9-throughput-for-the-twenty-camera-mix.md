@@ -2,7 +2,7 @@
 title: 'Throughput for the twenty-camera mix'
 type: 'feature'
 created: '2026-10-11'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: 'a25dd69af089a780aa02377513b03f8cc87fda73'
 route: 'dispatch'
 review_loop_iteration: 0
