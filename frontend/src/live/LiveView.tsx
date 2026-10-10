@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { Tile } from "../ui/controls";
 import { faceText, fusedText, largestFace, voiceText, type MicState } from "./panel";
 import { DEFAULT_FUSION, type FrameResult } from "./protocol";
 import { EMPTY_READOUT, LiveRun, type Readout } from "./run";
 
 const NOTICE_MS = 4000;
-const pct = (w: number) => `${Math.round(w * 100)}%`;
+const pct = (w: number) => `${Math.round(w * 100)} %`;
 
 type Phase = "idle" | "starting" | "running";
 
@@ -29,13 +30,8 @@ function formatMs(v: number | null): string {
   return v === null ? "—" : `${Math.round(v)} мс`;
 }
 
-/** `onSessionStart`/`onSessionEnd` fire when the server confirms a session and when it is stopped. */
-export default function LiveView({
-  onSessionStart,
-  onSessionEnd,
-}: { onSessionStart?: () => void; onSessionEnd?: () => void } = {}) {
-  const sessionCbRef = useRef({ onSessionStart, onSessionEnd });
-  sessionCbRef.current = { onSessionStart, onSessionEnd };
+/** `/live`: browser webcam and microphone session (CAP-1, CAP-2). The sessions list reloads when opened. */
+export default function LiveView() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runRef = useRef<LiveRun | null>(null);
@@ -62,10 +58,8 @@ export default function LiveView({
   const stop = () => {
     attemptRef.current++;
     window.clearTimeout(noticeTimerRef.current);
-    const hadRun = runRef.current !== null;
     runRef.current?.stop();
     runRef.current = null;
-    if (hadRun) sessionCbRef.current.onSessionEnd?.();
     if (videoRef.current) videoRef.current.srcObject = null;
     setResult(null);
     setPhase("idle");
@@ -121,7 +115,6 @@ export default function LiveView({
     const run = new LiveRun(stream, video, canvas, {
       onSession: () => {
         setPhase("running");
-        sessionCbRef.current.onSessionStart?.();
       },
       onFatal: (message) => {
         if (runRef.current !== run) return;
@@ -144,25 +137,28 @@ export default function LiveView({
     runRef.current = run;
   };
 
-  const p95Class = readout.p95 === null ? "" : readout.p95 < 1000 ? "ok" : "error";
+  const p95Class = readout.p95 === null ? "" : readout.p95 < 1000 ? "text-live" : "error";
   const running = phase === "running";
   const face = result ? largestFace(result.faces) : null;
   const voice = running ? voiceText(micState, result?.audio ?? null) : micWanted ? "—" : "микрофон выключен";
 
   return (
-    <section className="card live" aria-labelledby="live-title">
-      <div className="live-head">
-        <h2 id="live-title">Анализ с веб-камеры</h2>
+    <main className="content live" aria-labelledby="live-title">
+      <div className="page-head">
+        <h1 id="live-title">Веб-камера</h1>
+        <span className={`badge-outline ${running ? "text-live" : phase === "starting" ? "text-connecting" : "text-offline"}`}>
+          {running ? "В эфире" : phase === "starting" ? "Подключение" : "Выключена"}
+        </span>
         <div className="actions">
-          <button type="button" onClick={start} disabled={phase !== "idle"}>
+          <button type="button" className="btn btn-primary" onClick={start} disabled={phase !== "idle"}>
             {phase === "starting" ? "Подключение…" : "Старт"}
           </button>
-          <button type="button" className="secondary" onClick={stop} disabled={phase === "idle"}>
+          <button type="button" className="btn" onClick={stop} disabled={phase === "idle"}>
             Стоп
           </button>
           <button
             type="button"
-            className={micWanted ? "secondary" : "secondary off"}
+            className="btn"
             onClick={toggleMic}
             aria-pressed={micWanted}
             title={micWanted ? "Выключить микрофон" : "Включить микрофон"}
@@ -171,58 +167,57 @@ export default function LiveView({
           </button>
         </div>
       </div>
-      <div className="stage">
-        <video ref={videoRef} autoPlay muted playsInline />
-        <canvas ref={canvasRef} aria-hidden="true" />
-        {phase === "idle" && <p className="stage-hint">Нажмите «Старт», чтобы включить камеру и начать анализ</p>}
+      <div className="tiles">
+        <Tile label="Задержка p50" value={formatMs(readout.p50)} />
+        <Tile label="Задержка p95" value={<span className={p95Class}>{formatMs(readout.p95)}</span>} alert={p95Class === "error"} />
+        <Tile label="Ответов в секунду" value={readout.rate.toFixed(1).replace(".", ",")} sub={`${readout.count} за 60 с`} />
       </div>
-      <dl className="readout panel" aria-live="off">
-        <div>
-          <dt>Голос</dt>
-          <dd>{voice}</dd>
-        </div>
-        <div>
-          <dt>Лицо</dt>
-          <dd>{running && result ? faceText(face) : "—"}</dd>
-        </div>
-        <div>
-          <dt>Итог</dt>
-          <dd>{running && result ? fusedText(face) : "—"}</dd>
-        </div>
-      </dl>
-      <dl className="readout" aria-live="off">
-        <div>
-          <dt>Задержка p50</dt>
-          <dd>{formatMs(readout.p50)}</dd>
-        </div>
-        <div>
-          <dt>Задержка p95</dt>
-          <dd className={p95Class}>{formatMs(readout.p95)}</dd>
-        </div>
-        <div>
-          <dt>Замеров за 60 с</dt>
-          <dd>{readout.count}</dd>
-        </div>
-        <div>
-          <dt>Ответов в секунду</dt>
-          <dd>{readout.rate.toFixed(1)}</dd>
-        </div>
-      </dl>
-      <p className="hint">
-        «Лицо» и «Итог» — для самого крупного лица в кадре. «Итог» объединяет лицо ({pct(DEFAULT_FUSION.w_face)}) и голос ({pct(DEFAULT_FUSION.w_audio)}), пока
-        звучит речь; без речи он совпадает с «Лицо». Задержка — от захвата кадра до отрисовки рамки, за последние
-        60 секунд. Цель: p95 меньше 1000 мс.
-      </p>
+      <div className="video-row">
+        <section aria-label="Видео с веб-камеры" className="video-box">
+          <div className="stage">
+            <video ref={videoRef} autoPlay muted playsInline />
+            <canvas ref={canvasRef} aria-hidden="true" />
+            {phase === "idle" && <p className="stage-hint">Нажмите «Старт», чтобы включить камеру и начать анализ</p>}
+            {running && (
+              <span className="live-badge">
+                <span className="dot live-dot" />
+                LIVE
+              </span>
+            )}
+          </div>
+        </section>
+        <section aria-label="Результат" className="panel visitors">
+          <h3>Посетитель</h3>
+          <dl className="readout-list" aria-live="off">
+            <div>
+              <dt>Лицо</dt>
+              <dd>{running && result ? faceText(face) : "—"}</dd>
+            </div>
+            <div>
+              <dt>Голос</dt>
+              <dd>{voice}</dd>
+            </div>
+            <div>
+              <dt>Итог</dt>
+              <dd>{running && result ? fusedText(face) : "—"}</dd>
+            </div>
+          </dl>
+          <p className="caption muted">
+            «Лицо» и «Итог» — для самого крупного лица в кадре. «Итог» объединяет лицо ({pct(DEFAULT_FUSION.w_face)}) и голос ({pct(DEFAULT_FUSION.w_audio)}), пока
+            звучит речь; без речи он совпадает с «Лицо». Задержка — от захвата кадра до отрисовки рамки, за последние 60 секунд. Цель: p95 меньше 1000 мс.
+          </p>
+        </section>
+      </div>
       {error && (
-        <p className="error" role="alert">
+        <p className="error-text" role="alert">
           {error}
         </p>
       )}
       {notice && !error && (
-        <p className="warning" role="status">
+        <p className="warn-box" role="status">
           {notice}
         </p>
       )}
-    </section>
+    </main>
   );
 }

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { HealthView } from "./App";
-import type { Health } from "./api";
+import { HealthBannerView, HealthView } from "./health";
+import type { Health } from "../api";
 
 const ALL = { yunet: true, fer: true, vad: true, ser: true };
 
@@ -59,5 +59,20 @@ describe("HealthView", () => {
 
   it("marks stale data when the server is unreachable", () => {
     expect(render({ status: "ok", device: "cpu", models: ALL }, true)).toContain("Связь с сервером потеряна");
+  });
+});
+
+describe("HealthBannerView", () => {
+  it("shows nothing for a healthy backend", () => {
+    expect(renderToStaticMarkup(<HealthBannerView health={{ status: "ok", device: "cpu", models: ALL }} error={null} />)).toBe("");
+  });
+
+  it("shows the CUDA fallback warning on every screen", () => {
+    const html = renderToStaticMarkup(<HealthBannerView health={{ status: "ok", device: "cpu", models: ALL, warning: "cuda_unavailable" }} error={null} />);
+    expect(html).toContain("видеокарта недоступна");
+  });
+
+  it("reports an unreachable backend", () => {
+    expect(renderToStaticMarkup(<HealthBannerView health={null} error="HTTP 502" />)).toContain("Сервер недоступен");
   });
 });

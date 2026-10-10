@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deleteSession, fetchSessions } from "./api";
+import { deleteSession, fetchSessions } from "./real";
 
 function stubFetch(status: number, body: string, contentType = "application/json") {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status, headers: { "Content-Type": contentType } })));

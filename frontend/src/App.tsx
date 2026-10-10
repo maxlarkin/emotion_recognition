@@ -1,115 +1,45 @@
-import { useEffect, useState } from "react";
-import { fetchHealth, type Health, type ModelKey } from "./api";
+// Router and screen map (ui.md Routes and menus).
+import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
+import AnalyzePage from "./analyze/AnalyzePage";
+import EventsJournal from "./history/EventsJournal";
+import SessionsPage from "./history/SessionsPage";
 import LiveView from "./live/LiveView";
-import SessionsView from "./sessions/SessionsView";
+import SettingsPage from "./settings/SettingsPage";
+import { ShellProvider } from "./shell/context";
+import Layout, { SidebarLayout } from "./shell/Layout";
+import Grid from "./streams/Grid";
+import StreamDetail from "./streams/StreamDetail";
 
-const MODEL_LABELS: Record<ModelKey, string> = {
-  yunet: "Детектор лиц (YuNet)",
-  fer: "Эмоции по лицу (EmotiEffLib)",
-  vad: "Детектор речи (Silero VAD)",
-  ser: "Эмоции по голосу (GigaAM-Emo)",
-};
+export const routes = [
+  {
+    element: <Layout />,
+    children: [
+      { index: true, element: <Navigate to="/streams" replace /> },
+      {
+        element: <SidebarLayout />,
+        children: [
+          { path: "streams", element: <Grid /> },
+          { path: "streams/:id", element: <StreamDetail /> },
+          { path: "live", element: <LiveView /> },
+        ],
+      },
+      { path: "history", element: <Navigate to="/history/events" replace /> },
+      { path: "history/events", element: <EventsJournal /> },
+      { path: "history/sessions", element: <SessionsPage /> },
+      { path: "settings", element: <Navigate to="/settings/events" replace /> },
+      { path: "settings/:tab", element: <SettingsPage /> },
+      { path: "analyze/:sessionId?", element: <AnalyzePage /> },
+      { path: "*", element: <Navigate to="/streams" replace /> },
+    ],
+  },
+];
 
-const MODEL_KEYS = Object.keys(MODEL_LABELS) as ModelKey[];
-
-const WARNINGS: Record<string, string> = {
-  cuda_unavailable:
-    "Образ собран для GPU, но видеокарта недоступна. Работа идёт на процессоре (CPU).",
-  models_loading: "Модели загружаются. Анализ станет доступен через несколько секунд.",
-  inference_failed:
-    "Модуль распознавания не запустился. Подробности в журнале бэкенда; если не хватает файлов моделей, пересоберите образ.",
-};
-
-const UNKNOWN_WARNING = "Сервер сообщил о проблеме. Подробности смотрите в журнале бэкенда.";
-
-const POLL_MS = 5000;
+const router = createBrowserRouter(routes);
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [sessionsKey, setSessionsKey] = useState(0);
-  const bumpSessions = () => setSessionsKey((k) => k + 1);
-
-  useEffect(() => {
-    let timer: number | undefined;
-    const ctrl = new AbortController();
-    const load = async () => {
-      try {
-        setHealth(await fetchHealth(ctrl.signal));
-        setError(null);
-      } catch (e) {
-        if (ctrl.signal.aborted) return;
-        setError(e instanceof Error ? e.message : String(e));
-      }
-      timer = window.setTimeout(load, POLL_MS);
-    };
-    load();
-    return () => {
-      ctrl.abort();
-      window.clearTimeout(timer);
-    };
-  }, []);
-
   return (
-    <main className="page">
-      <h1>Распознавание эмоций</h1>
-      <div className="layout">
-        <LiveView onSessionStart={bumpSessions} onSessionEnd={bumpSessions} />
-        <section className="card health" aria-live="polite">
-          <h2>Состояние системы</h2>
-          {error && !health && <p className="error">Сервер недоступен ({error}). Повторная попытка…</p>}
-          {!error && !health && <p>Загрузка…</p>}
-          {health && <HealthView health={health} stale={error !== null} />}
-        </section>
-      </div>
-      <SessionsView refreshKey={sessionsKey} />
-    </main>
-  );
-}
-
-export function HealthView({ health, stale }: { health: Health; stale: boolean }) {
-  const loading = health.warning === "models_loading";
-  // While loading or after a failed start every model is false: the warning explains why, not missing files.
-  const missing =
-    loading || health.warning === "inference_failed"
-      ? []
-      : MODEL_KEYS.filter((k) => !health.models[k]);
-  return (
-    <>
-      {stale && <p className="error">Связь с сервером потеряна, показаны последние данные.</p>}
-      <p>
-        Устройство: <strong>{loading ? "определяется…" : health.device === "cuda" ? "GPU (CUDA)" : "CPU"}</strong>
-      </p>
-      {health.gpu_name && (
-        <p>
-          Видеокарта: <strong>{health.gpu_name}</strong>
-        </p>
-      )}
-      {health.warning && (
-        <p className="warning" role="alert" title={health.warning}>
-          ⚠ {WARNINGS[health.warning] ?? UNKNOWN_WARNING}
-        </p>
-      )}
-      <p>
-        Статус:{" "}
-        <strong className={health.status === "ok" ? "ok" : "error"}>
-          {health.status === "ok" ? "всё готово" : "работа ограничена"}
-        </strong>
-      </p>
-      <h3>Модели</h3>
-      <ul className="models">
-        {MODEL_KEYS.map((k) => (
-          <li key={k} className={health.models[k] ? "ok" : "error"}>
-            <span aria-hidden="true">{health.models[k] ? "✓" : "✗"}</span> {MODEL_LABELS[k]}
-            {!health.models[k] && (loading ? " — загружается" : " — не загружена")}
-          </li>
-        ))}
-      </ul>
-      {missing.length > 0 && (
-        <p className="error">
-          Отсутствуют модели: {missing.map((k) => MODEL_LABELS[k]).join(", ")}. Пересоберите образ.
-        </p>
-      )}
-    </>
+    <ShellProvider>
+      <RouterProvider router={router} />
+    </ShellProvider>
   );
 }

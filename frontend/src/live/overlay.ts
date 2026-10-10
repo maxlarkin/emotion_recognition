@@ -12,15 +12,32 @@ export const EMOTION_RU: Record<Emotion, string> = {
   neutral: "нейтрально",
 };
 
-export const EMOTION_COLOR: Record<Emotion, string> = {
-  anger: "#e5484d",
-  disgust: "#8e9c2d",
-  fear: "#8e4ec6",
-  happiness: "#f5b700",
-  sadness: "#3e7bfa",
-  surprise: "#12a594",
-  neutral: "#9aa4b2",
-};
+/** Canvas cannot use CSS variables directly: read the tokens.css values (fallbacks for tests). */
+function token(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+type Decided = FaceResult & { decision?: string };
+
+function boxStyle(face: Decided): { stroke: string; tagBg: string; tagFg: string; dashed: boolean } {
+  const accent = token("--accent", "#4C8DFF");
+  const white = token("--text-primary", "#FFFFFF");
+  if (face.decision === "alert") {
+    const alert = token("--alert-bg", "#FF8A3D");
+    return { stroke: alert, tagBg: alert, tagFg: token("--alert-fg", "#0B1220"), dashed: false };
+  }
+  if (face.decision === "abstain") return { stroke: token("--status-offline", "#8C99B0"), tagBg: token("--tag-muted", "#3A4A66"), tagFg: white, dashed: true };
+  return { stroke: accent, tagBg: accent, tagFg: white, dashed: false };
+}
+
+/** Box label per ui.md: «#track · 0,91» (negative-group probability), «#track · ?» when abstained. */
+export function boxText(face: Decided): string {
+  if (face.decision === "abstain") return `#${face.track_id} · ?`;
+  const p = face.fused;
+  const neg = p.anger + p.disgust + p.fear + p.sadness;
+  return `#${face.track_id} · ${neg.toFixed(2).replace(".", ",")}`;
+}
 
 export interface Rect {
   x: number;
@@ -69,21 +86,23 @@ export function drawOverlay(
   shown: Rect,
 ): void {
   ctx.clearRect(0, 0, cssW, cssH);
-  ctx.lineWidth = 3;
-  ctx.font = "600 15px system-ui, sans-serif";
+  ctx.lineWidth = 2;
+  ctx.font = "600 13px 'IBM Plex Sans', system-ui, sans-serif";
   ctx.textBaseline = "bottom";
   for (const face of faces) {
     const r = scaleBox(face.box, jpegW, jpegH, shown);
-    const color = EMOTION_COLOR[face.fused_label];
-    ctx.strokeStyle = color;
+    const st = boxStyle(face);
+    ctx.strokeStyle = st.stroke;
+    ctx.setLineDash?.(st.dashed ? [6, 4] : []);
     ctx.strokeRect(r.x, r.y, r.w, r.h);
-    const text = faceLabel(face);
+    ctx.setLineDash?.([]);
+    const text = boxText(face);
     const tw = ctx.measureText(text).width + 12;
     const th = 22;
     const ty = r.y - th >= 0 ? r.y - th : r.y; // above the box, or inside it at the top edge
-    ctx.fillStyle = color;
-    ctx.fillRect(r.x - 1.5, ty, tw, th);
-    ctx.fillStyle = "#11151c";
+    ctx.fillStyle = st.tagBg;
+    ctx.fillRect(r.x - 1, ty, tw, th);
+    ctx.fillStyle = st.tagFg;
     ctx.fillText(text, r.x + 4.5, ty + th - 4);
   }
 }

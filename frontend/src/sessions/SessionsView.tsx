@@ -5,7 +5,7 @@ import { dateText, durationText, kindLabel, statusLabel } from "./format";
 const RUNNING_POLL_MS = 5000; // while a session runs, its duration and status change
 const AFTER_CHANGE_MS = 1000; // the server finishes a session just after the socket closes
 
-/** «Сессии» card. `refreshKey` changes when a live session starts or ends. */
+/** Sessions list. `refreshKey` changes when a live session starts or ends. */
 export default function SessionsView({ refreshKey = 0 }: { refreshKey?: number }) {
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,17 +57,21 @@ export default function SessionsView({ refreshKey = 0 }: { refreshKey?: number }
   };
 
   return (
-    <section className="card sessions" aria-labelledby="sessions-title">
-      <div className="live-head">
-        <h2 id="sessions-title">Сессии</h2>
-        <button type="button" className="secondary" onClick={load}>
-          Обновить
-        </button>
+    <>
+      <div className="page-head">
+        <h1 id="sessions-title">Сеансы и экспорт</h1>
+        <div className="actions">
+          <button type="button" className="btn btn-sm" onClick={load}>
+            Обновить
+          </button>
+        </div>
       </div>
-      {error && <p className="error">{sessions ? error : `Не удалось загрузить список сессий (${error}).`}</p>}
-      {!error && !sessions && <p>Загрузка…</p>}
+      <section className="panel sessions" aria-labelledby="sessions-title">
+      {error && <p className="error-text">{sessions ? error : `Не удалось загрузить список сессий (${error}).`}</p>}
+      {!error && !sessions && <p className="empty-note">Загрузка…</p>}
       {sessions && <SessionsTable sessions={sessions} busy={busy} onDelete={remove} />}
-    </section>
+      </section>
+    </>
   );
 }
 
@@ -80,7 +84,7 @@ export function SessionsTable({
   busy?: string | null;
   onDelete: (id: string) => void;
 }) {
-  if (sessions.length === 0) return <p className="hint">Сессий пока нет</p>;
+  if (sessions.length === 0) return <p className="empty-note">Сессий пока нет</p>;
   return (
     <div className="table-wrap">
       <table className="table">
@@ -91,7 +95,7 @@ export function SessionsTable({
             <th scope="col">Длительность</th>
             <th scope="col">Статус</th>
             <th scope="col">
-              <span className="visually-hidden">Действия</span>
+              <span className="sr-only">Действия</span>
             </th>
           </tr>
         </thead>
@@ -100,10 +104,10 @@ export function SessionsTable({
             const running = s.status === "running";
             return (
               <tr key={s.id}>
-                <td>{dateText(s.created_at)}</td>
+                <td className="time">{dateText(s.created_at)}</td>
                 <td>{kindLabel(s.kind)}</td>
                 <td className="num">{durationText(s.duration)}</td>
-                <td className={running ? "ok" : undefined}>{statusLabel(s.status)}</td>
+                <td className={running ? "text-live" : undefined}>{statusLabel(s.status)}</td>
                 <td className="row-actions">
                   <a href={exportUrl(s.id, "csv")} download={`session-${s.id}.csv`}>
                     CSV
@@ -113,7 +117,7 @@ export function SessionsTable({
                   </a>
                   <button
                     type="button"
-                    className="secondary small"
+                    className="btn btn-sm"
                     onClick={() => onDelete(s.id)}
                     disabled={running || busy === s.id}
                     title={running ? "Сессия ещё идёт" : "Удалить сессию"}
