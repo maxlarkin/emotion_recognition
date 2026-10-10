@@ -192,8 +192,11 @@ export interface FileSession {
   usable_pct: number | null;
 }
 
-/** GET /api/sessions/{id}/timeline: per-frame faces plus audio windows. */
+/** GET /api/sessions/{id}/timeline (interfaces.md, Session timeline). */
 export interface Timeline {
+  session_id?: string;
+  kind?: SessionKind;
+  duration_ms?: number;
   frames: { ts_ms: number; width: number; height: number; faces: StreamFace[] }[];
   audio: (AudioBlock & { window_end_ts: number })[];
 }

@@ -64,7 +64,7 @@ This socket is for viewing only. The server pushes updates for every active stre
 | GET | `/api/system` | same payload as the `system` WS message |
 | GET | `/api/sessions?kind=` | list sessions: id, kind (`live`, `file` or `rtsp`), stream_id, created_at, duration, status; file sessions add `file_name`, `progress` |
 | GET | `/api/sessions/{id}` | status, progress 0–1, notes, summary (dominant emotion share, faces seen, speech share, `usable_pct`); file sessions add `file_name`, `duration_ms`, `resolution` [w,h] |
-| GET | `/api/sessions/{id}/timeline` | full per-frame results (same face object as WS) plus audio windows |
+| GET | `/api/sessions/{id}/timeline` | full per-frame results plus audio windows; body below (Session timeline) |
 | GET | `/api/sessions/{id}/media` | the uploaded file, for playback (file sessions only) |
 | GET | `/api/sessions/{id}/export?format=csv|json` | download |
 | DELETE | `/api/sessions/{id}` | remove session data |
@@ -79,6 +79,22 @@ Stream `settings`: `{"enabled":true,"analysis_fps":3|5|8,"detection_size":"auto"
 Errors return HTTP 4xx/5xx with `{"detail":"..."}` (FastAPI default).
 
 File-session `status` takes one of these values: `queued`, `processing`, `done`, `failed`. The `notes` array may contain `no_audio_track` or `no_faces_detected`.
+
+## Session timeline
+
+`GET /api/sessions/{id}/timeline` returns one JSON object:
+
+```json
+{"session_id":"...","kind":"file","duration_ms":412000,
+ "frames":[{"ts_ms":1200,"width":640,"height":360,"faces":[...same face objects as frame_result...]}],
+ "audio":[{"window_end_ts":3000,"speech":true,"probs":{...7 keys...},"label":"neutral"}]}
+```
+
+- `frames` and `audio` are sorted by time. A frame with no faces is kept (empty `faces`), so gaps without faces are visible.
+- `width` and `height` are the size of the image the `box` coordinates refer to: the sent JPEG for webcam sessions, the analysed frame for RTSP and file sessions.
+- `ts_ms` and `window_end_ts` use the session's clock: client `capture_ts` for webcam, server clock for RTSP, media milliseconds from the clip start for files.
+- `audio` holds one entry per distinct window, with the same 7-key `probs` and silence rule as the WS audio block; it is empty for files with no audio track.
+- `duration_ms` is the clip length for files and the session length otherwise.
 
 ## Export row (CSV columns; JSON = array of same objects)
 

@@ -13,9 +13,6 @@
   summary: The session store's write-queue cap (`QUEUE_MAX_FRAMES`, frame records dropped once the writer falls behind) is untested.
   evidence: No test fills the queue. Single-stream live never reaches the cap. Add the test before the 20-stream stories (1.6, 1.7) put real load on the writer.
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/6-ui-shell-design-system-and-screens-on-mock-data.md`
-  summary: interfaces.md leaves the `/api/sessions/{id}/timeline` body unspecified ("full per-frame results plus audio windows").
-  evidence: The story 1.6 player assumes `{frames:[{ts_ms,width,height,faces}], audio:[{window_end_ts,speech,probs,label}]}` (`frontend/src/api/types.ts` Timeline). Fix the shape in the spec before story 1.11.
-- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/6-ui-shell-design-system-and-screens-on-mock-data.md`
   summary: The real `/ws/streams` client does not resync (refresh streams and incidents) after a reconnect and does not mark feeds stale while disconnected.
   evidence: `src/api/streamsSocket.ts` reconnects silently and `AppData` only reacts to messages. The path is unused while streams are mocked; fix it in story 1.7 when the real socket is switched on.
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/6-ui-shell-design-system-and-screens-on-mock-data.md`
