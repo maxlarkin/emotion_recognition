@@ -45,6 +45,7 @@ This socket is for viewing only. The server pushes updates for every active stre
 
 **Client → server.** Text JSON. `{"type":"subscribe","stream_ids":["cam1","cam2"]}` limits the subscription; with no subscribe message, the client receives all streams.
 
+- In `stream_result`, `box` is in pixels of the analysed-frame JPEG sent just before it; `face_px` stays in pixels of the frame the detector saw (the stream's detection size).
 - Latency per stream is `client_render_time − decode_ts`. The server clock is used for `decode_ts`, so the client corrects it by the offset measured from `system` messages, which carry `server_ts`.
 - Only the latest analysed frame per stream is sent. If the client falls behind, older frames are dropped.
 
@@ -54,7 +55,7 @@ This socket is for viewing only. The server pushes updates for every active stre
 |---|---|---|
 | GET | `/api/health` | `{"status":"ok","device":"cuda"|"cpu","models":{...loaded}}` |
 | POST | `/api/files` | multipart upload; returns `{"session_id"}` and starts analysis |
-| GET | `/api/streams` | list streams: `id, name, site, url (credentials masked), camera_type, settings, state, fps, has_audio, source_resolution ([w,h] or null), session_id` |
+| GET | `/api/streams` | list streams: `id, name, site, url (credentials masked), camera_type, settings, state, fps, has_audio, source_resolution ([w,h] or null), decode ("nvdec"|"cpu"|null), session_id` |
 | POST | `/api/streams` | `{"name":"Камера 1","site":"Тверская","url":"rtsp://...","camera_type":"webcam"|"sector"|"security","settings":{...}}`; `site` defaults to `""`, `camera_type` to `sector`, `settings` to defaults. Returns `{"id"}`, starts ingest and analysis (unless `settings.enabled` is false), creates a session of kind `rtsp` |
 | PATCH | `/api/streams/{id}` | partial `{name, site, url, camera_type, settings}`; changes to `url`, `camera_type` or `settings` restart only this stream's source. Returns the stream object |
 | POST | `/api/streams/{id}/reconnect` | reconnect now, resetting backoff |
