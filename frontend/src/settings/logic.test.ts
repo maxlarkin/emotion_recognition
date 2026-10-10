@@ -28,8 +28,9 @@ describe("global settings", () => {
 
 describe("bulk camera edit", () => {
   it("sends only the chosen fields", () => {
-    expect(bulkPatch({ ...EMPTY_BULK, analysis_fps: 3 })).toEqual({ analysis_fps: 3 });
-    expect(bulkPatch({ ...EMPTY_BULK, enabled: false, min_face_px: 56 })).toEqual({ enabled: false, min_face_px: 56 });
+    expect(bulkPatch({ ...EMPTY_BULK, analysis_fps: 3 })).toEqual({ settings: { analysis_fps: 3 } });
+    expect(bulkPatch({ ...EMPTY_BULK, enabled: false, min_face_px: 56 })).toEqual({ settings: { enabled: false, min_face_px: 56 } });
+    expect(bulkPatch({ ...EMPTY_BULK, camera_type: "security" })).toEqual({ camera_type: "security" });
     expect(bulkPatch(EMPTY_BULK)).toEqual({});
   });
 

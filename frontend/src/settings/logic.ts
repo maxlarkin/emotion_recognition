@@ -1,5 +1,5 @@
 // Pure settings logic: validation against ui.md ranges, dirty check and bulk camera patches.
-import type { AppSettings, Stream, StreamSettings } from "../api/types";
+import type { AppSettings, CameraType, Stream, StreamPatch, StreamSettings } from "../api/types";
 
 export const RANGES = {
   negative_threshold: { min: 0.5, max: 0.9, step: 0.05 },
@@ -27,13 +27,17 @@ export function sameSettings(a: AppSettings, b: AppSettings): boolean {
 }
 
 /** Bulk edit: only fields the user chose (non-null) are sent. */
-export type BulkDraft = { [K in keyof StreamSettings]: StreamSettings[K] | null };
+export type BulkDraft = { [K in keyof StreamSettings]: StreamSettings[K] | null } & { camera_type: CameraType | null };
 
-export const EMPTY_BULK: BulkDraft = { enabled: null, analysis_fps: null, detection_size: null, min_face_px: null };
+export const EMPTY_BULK: BulkDraft = { enabled: null, analysis_fps: null, detection_size: null, min_face_px: null, camera_type: null };
 
-export function bulkPatch(draft: BulkDraft): Partial<StreamSettings> {
-  const out: Partial<StreamSettings> = {};
-  for (const [k, v] of Object.entries(draft)) if (v !== null) (out as Record<string, unknown>)[k] = v;
+export function bulkPatch(draft: BulkDraft): StreamPatch {
+  const { camera_type, ...rest } = draft;
+  const settings: Partial<StreamSettings> = {};
+  for (const [k, v] of Object.entries(rest)) if (v !== null) (settings as Record<string, unknown>)[k] = v;
+  const out: StreamPatch = {};
+  if (camera_type !== null) out.camera_type = camera_type;
+  if (Object.keys(settings).length) out.settings = settings;
   return out;
 }
 

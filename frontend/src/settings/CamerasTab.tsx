@@ -63,7 +63,7 @@ export default function CamerasTab() {
   const applyBulk = async () => {
     const patch = bulkPatch(bulk);
     const ids = [...selected].filter((id) => streams?.some((s) => s.id === id));
-    const results = await Promise.allSettled(ids.map((id) => api.updateStream(id, { settings: patch })));
+    const results = await Promise.allSettled(ids.map((id) => api.updateStream(id, patch)));
     await appData.refreshStreams();
     const failed = ids.filter((_, i) => results[i].status === "rejected");
     if (failed.length === 0) {
@@ -110,6 +110,9 @@ export default function CamerasTab() {
               allowClear
               onChange={(v) => setBulk({ ...bulk, enabled: v === null ? null : v === "on" })}
             />
+          </SettingRow>
+          <SettingRow label="Тип камеры">
+            <Segmented label="Тип камеры" options={TYPE_OPTIONS} value={bulk.camera_type} allowClear onChange={(v) => setBulk({ ...bulk, camera_type: v })} />
           </SettingRow>
           <SettingRow label="Размер кадра для поиска">
             <Segmented label="Размер кадра для поиска" options={SIZE_OPTIONS} value={bulk.detection_size} allowClear onChange={(v) => setBulk({ ...bulk, detection_size: v })} />
