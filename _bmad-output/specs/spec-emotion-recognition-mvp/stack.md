@@ -40,7 +40,7 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
   - The event is emitted within 1 s of the rule holding and stored in SQLite. An event carries the peak emotion, the mean group probability over the held interval, and the duration. No face image is stored.
 - **System load:** `psutil` for CPU and RAM. NVML (`nvidia-ml-py`) for GPU utilisation and VRAM; it reports null in the CPU image or when no GPU is present.
 - **Latency budget:** per-frame inference (`proc_ms`) p95 ≤ 100 ms with 20 streams; RTSP decode-to-result p95 < 1000 ms.
-- **File analysis:** decode with ffmpeg (PyAV). Video sampled at 5 fps. Audio resampled to 16 kHz mono and analysed in the same windows as live audio.
+- **File analysis:** decode with ffmpeg (PyAV). Video sampled at 5 fps. Audio resampled to 16 kHz mono and analysed in the same windows as live audio. All file-session timestamps (frames, audio windows, events) are media milliseconds from the start of the clip.
 
 ## Runtime
 

@@ -87,7 +87,7 @@ export const INCIDENT_LABEL: Record<IncidentState, string> = { new: "Новое"
 
 export const resolution = (r: [number, number] | null): string => (r ? `${r[0]}×${r[1]}` : "—");
 
-/** File-session events carry media milliseconds, live ones epoch ms (see Implementation Notes of story 1.6). */
+/** File-session events carry media milliseconds (interfaces.md, Emotion event); live ones carry epoch ms. */
 export const isMediaTime = (ms: number): boolean => ms < 1e11;
 
 /** Event time: «10.10, 14:03:07» for live sources, «запись 04:06» for a position inside a file. */

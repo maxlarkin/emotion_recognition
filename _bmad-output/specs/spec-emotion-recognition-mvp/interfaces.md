@@ -98,5 +98,5 @@ File-session `status` takes one of these values: `queued`, `processing`, `done`,
 
 - `state` is `new`, `confirmed` or `false_alarm` for negative events and null for positive ones. A new negative event starts as `new`.
 - `kind` is `negative` or `positive`. `emotion` is the strongest emotion of the group over the held interval. `group_prob` is the mean group probability over that interval.
-- `stream_id` and `camera_type` are null for webcam and file sessions. Timestamps use the server clock, except webcam sessions, which use the client `capture_ts`.
+- `stream_id` and `camera_type` are null for webcam and file sessions. Timestamps use the server clock for RTSP streams, the client `capture_ts` for webcam sessions, and media milliseconds from the start of the clip for file sessions (the same clock as the file timeline and export `ts_ms`).
 - Export columns (CSV; JSON = array of the same objects): `event_id, kind, session_id, stream_id, camera_type, track_id, start_ts, emit_ts, duration_ms, emotion, group_prob, state`.

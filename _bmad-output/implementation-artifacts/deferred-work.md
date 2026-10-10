@@ -13,9 +13,6 @@
   summary: The session store's write-queue cap (`QUEUE_MAX_FRAMES`, frame records dropped once the writer falls behind) is untested.
   evidence: No test fills the queue. Single-stream live never reaches the cap. Add the test before the 20-stream stories (1.6, 1.7) put real load on the writer.
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/6-ui-shell-design-system-and-screens-on-mock-data.md`
-  summary: interfaces.md does not say which clock file-session events use; the episode timeline needs media milliseconds, while the contract says server clock for all non-webcam sources.
-  evidence: The story 1.6 UI treats event timestamps below 1e11 as media ms («запись мм:сс»). Decide via bmad-spec before story 1.10/1.11, e.g. "file-session event timestamps are media ms", and whether file incidents should count in the bell.
-- source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/6-ui-shell-design-system-and-screens-on-mock-data.md`
   summary: interfaces.md leaves the `/api/sessions/{id}/timeline` body unspecified ("full per-frame results plus audio windows").
   evidence: The story 1.6 player assumes `{frames:[{ts_ms,width,height,faces}], audio:[{window_end_ts,speech,probs,label}]}` (`frontend/src/api/types.ts` Timeline). Fix the shape in the spec before story 1.11.
 - source_spec: `_bmad-output/specs/spec-emotion-recognition-mvp/stories/6-ui-shell-design-system-and-screens-on-mock-data.md`
