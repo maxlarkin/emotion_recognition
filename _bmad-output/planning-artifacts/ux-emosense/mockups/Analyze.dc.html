@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>EmoSense — анализ записей</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B1220}
+a{color:#9DBDFF}a:hover{color:#C9DAFF}
+.mi:hover{background:#2C3C5C !important}
+.tb:hover{background:#1B2840}
+.si:hover{background:#18243A}
+.ep:hover{background:#18243A}
+select{height:36px;padding:0 10px;background:#0B1220;border:1px solid #3A4C6C;border-radius:0;color:#FFFFFF;font:inherit;font-size:13px}
+.fl{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#B4BFD1}
+button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid #9DBDFF;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0B1220; color: #FFFFFF; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.45">
+
+<sc-if value="{{anyOpen}}" hint-placeholder-val="{{ false }}">
+<button aria-label="Закрыть меню" onClick="{{closeMenus}}" style="position: fixed; inset: 0; background: transparent; border: 0; z-index: 40; cursor: default"></button>
+</sc-if>
+
+<header style="position: sticky; top: 0; z-index: 45; background: #111A2B; border-bottom: 1px solid #26344F">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 0 12px; min-height: 44px">
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding-right: 8px; color: #FFFFFF; text-decoration: none">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M8.5 14.5c1 1.2 2.2 1.8 3.5 1.8s2.5-.6 3.5-1.8"></path><path d="M9 9.5h.01M15 9.5h.01"></path></svg>
+<span style="font-weight: 600; font-size: 17px; letter-spacing: .2px">EmoSense</span>
+</a>
+<nav aria-label="Главное меню" style="display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 auto">
+<sc-for list="{{menus}}" as="m" hint-placeholder-count="4">
+<div style="position: relative">
+<button class="tb" onClick="{{m.toggle}}" aria-expanded="{{m.expanded}}" style="{{m.btnStyle}}">
+<span>{{m.label}}</span>
+<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg>
+</button>
+<sc-if value="{{m.isOpen}}" hint-placeholder-val="{{ false }}">
+<div role="menu" style="position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; min-width: 260px; background: #22304A; border: 1px solid #3A4C6C; box-shadow: 0 16px 40px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.4); padding: 6px">
+<sc-for list="{{m.items}}" as="it" hint-placeholder-count="3">
+<sc-if value="{{it.isLink}}" hint-placeholder-val="{{ false }}">
+<a class="mi" role="menuitem" href="{{it.href}}" style="display: flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 0 12px; color: #FFFFFF; text-decoration: none">{{it.t}}</a>
+</sc-if>
+<sc-if value="{{it.isBtn}}" hint-placeholder-val="{{ true }}">
+<button class="mi" role="menuitem" onClick="{{it.run}}" style="display: flex; align-items: center; width: 100%; min-height: 44px; padding: 0 12px; background: transparent; border: 0; border-radius: 0; color: #FFFFFF; text-align: left; cursor: pointer; font: inherit">{{it.t}}</button>
+</sc-if>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</nav>
+</div>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; align-items: stretch">
+
+<aside aria-label="Записи" style="flex: 1 1 260px; max-width: 340px; background: #111A2B; border-right: 1px solid #26344F; box-sizing: border-box; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: calc(100vh - 45px)">
+<h2 style="margin: 0; font-size: 18px; font-weight: 600">Записи</h2>
+<div style="border: 1px dashed #3A4C6C; padding: 16px 12px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center">
+<svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#B4BFD1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 16v4h16v-4"></path></svg>
+<span style="font-size: 13px; color: #D3DAE6">Перетащите видео сюда</span>
+<button style="height: 36px; padding: 0 16px; background: {{accent}}; border: 0; border-radius: 0; color: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Выбрать файлы</button>
+<span style="font-size: 12px; color: #8C99B0">MP4, AVI, MOV, MKV</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<label class="fl">Частота анализа
+<select><option>5 к/с</option><option>3 к/с</option><option>8 к/с</option></select>
+</label>
+<label class="fl">Мин. размер лица
+<select><option>56 px</option><option>48 px</option><option>40 px</option><option>64 px</option></select>
+</label>
+<label class="fl">Ложных не более
+<select><option>15 %</option><option>10 %</option><option>5 %</option><option>20 %</option></select>
+</label>
+<label class="fl">Эпизод не короче
+<select><option>20 с</option><option>10 с</option><option>30 с</option></select>
+</label>
+</div>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{files}}" as="f" hint-placeholder-count="4">
+<li>
+<button class="si" onClick="{{f.pick}}" aria-pressed="{{f.pressed}}" style="{{f.style}}">
+<span style="font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%">{{f.name}}</span>
+<span style="display: flex; justify-content: space-between; width: 100%; font-size: 12px; color: #B4BFD1"><span>{{f.meta}}</span><span style="{{f.statusStyle}}">{{f.status}}</span></span>
+<sc-if value="{{f.running}}" hint-placeholder-val="{{ false }}">
+<span style="display: block; width: 100%; height: 4px; background: #0B1220"><span style="{{f.progStyle}}"></span></span>
+</sc-if>
+</button>
+</li>
+</sc-for>
+</ul>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 12px; display: flex; flex-direction: column; gap: 12px">
+
+<sc-if value="{{hasResult}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+<h1 style="margin: 0; font-size: 22px; font-weight: 600">{{cur.name}}</h1>
+<span style="font-size: 13px; color: #8C99B0">{{cur.meta}}</span>
+</div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<div style="position: relative; z-index: 50">
+<button onClick="{{toggleExp}}" aria-expanded="{{expExpanded}}" style="{{expBtnStyle}}">
+<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M7 11l5 5 5-5"></path><path d="M4 20h16"></path></svg>
+Экспорт
+<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg>
+</button>
+<sc-if value="{{expOpen}}" hint-placeholder-val="{{ false }}">
+<div role="menu" style="position: absolute; top: calc(100% + 4px); right: 0; min-width: 280px; background: #22304A; border: 1px solid #3A4C6C; box-shadow: 0 16px 40px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.4); padding: 4px">
+<sc-for list="{{exports}}" as="x" hint-placeholder-count="3">
+<button class="mi" role="menuitem" onClick="{{x.run}}" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 40px; padding: 0 12px; background: transparent; border: 0; border-radius: 0; color: #FFFFFF; text-align: left; cursor: pointer; font: inherit">
+<span>{{x.t}}</span><span style="font-size: 12px; color: #8C99B0; font-family: 'IBM Plex Mono', monospace">{{x.ext}}</span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+<sc-for list="{{cur.tiles}}" as="t" hint-placeholder-count="4">
+<div style="background: #152036; border: 1px solid #26344F; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 12px; color: #B4BFD1">{{t.k}}</span>
+<span style="font-size: 22px; font-weight: 600">{{t.v}}</span>
+<span style="font-size: 12px; color: #8C99B0">{{t.s}}</span>
+</div>
+</sc-for>
+</div>
+
+<section aria-label="Шкала времени" style="background: #152036; border: 1px solid #26344F; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap">
+<h3 style="margin: 0; font-size: 16px; font-weight: 600">Эпизоды на записи</h3>
+<span style="display: flex; gap: 14px; font-size: 12px; color: #B4BFD1">
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; background: #FF8A3D"></span>Инцидент</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; background: #5A6A88"></span>Не уверена</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; background: #26344F"></span>Нет лиц в кадре</span>
+</span>
+</div>
+<div style="position: relative; height: 36px; background: #0B1220; border: 1px solid #26344F">
+<sc-for list="{{cur.gaps}}" as="g" hint-placeholder-count="2">
+<span style="{{g.style}}"></span>
+</sc-for>
+<sc-for list="{{cur.eps}}" as="e" hint-placeholder-count="4">
+<button onClick="{{e.pick}}" aria-label="{{e.aria}}" style="{{e.barStyle}}"></button>
+</sc-for>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 11px; color: #8C99B0; font-family: 'IBM Plex Mono', monospace">
+<sc-for list="{{cur.ticks}}" as="tk" hint-placeholder-count="5"><span>{{tk}}</span></sc-for>
+</div>
+</section>
+
+<section aria-label="Список эпизодов" style="background: #152036; border: 1px solid #26344F; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px">
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px">
+<thead>
+<tr style="color: #B4BFD1; text-align: left">
+<th style="padding: 8px 10px 8px 0; font-weight: 500; border-bottom: 1px solid #26344F">Время</th>
+<th style="padding: 8px 10px; font-weight: 500; border-bottom: 1px solid #26344F">Клиент</th>
+<th style="padding: 8px 10px; font-weight: 500; border-bottom: 1px solid #26344F">Преобладает</th>
+<th style="padding: 8px 10px; font-weight: 500; border-bottom: 1px solid #26344F; text-align: right">Негатив</th>
+<th style="padding: 8px 0 8px 10px; font-weight: 500; border-bottom: 1px solid #26344F">Статус</th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{cur.eps}}" as="e" hint-placeholder-count="4">
+<tr class="ep" style="{{e.rowStyle}}">
+<td style="padding: 9px 10px 9px 0; border-bottom: 1px solid #1E2B43; font-family: 'IBM Plex Mono', monospace; color: #B4BFD1; white-space: nowrap">{{e.range}}</td>
+<td style="padding: 9px 10px; border-bottom: 1px solid #1E2B43">#{{e.track}}</td>
+<td style="padding: 9px 10px; border-bottom: 1px solid #1E2B43">{{e.emo}}</td>
+<td style="padding: 9px 10px; border-bottom: 1px solid #1E2B43; text-align: right; font-family: 'IBM Plex Mono', monospace">{{e.pTxt}}</td>
+<td style="padding: 9px 0 9px 10px; border-bottom: 1px solid #1E2B43"><span style="{{e.chip}}">{{e.decTxt}}</span></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div></section>
+</sc-if>
+
+<sc-if value="{{noResult}}" hint-placeholder-val="{{ false }}">
+<div style="flex: 1 1 auto; min-height: 420px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #152036; border: 1px solid #26344F; text-align: center; padding: 24px">
+<span style="font-size: 16px; font-weight: 500">{{pendingTitle}}</span>
+<div style="width: 280px; height: 6px; background: #0B1220"><div style="{{pendingBar}}"></div></div>
+<span style="font-size: 13px; color: #8C99B0">Результат появится здесь после обработки</span>
+</div>
+</sc-if>
+
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#4C8DFF","options":["#4C8DFF","#38BDF8","#7C8CFF","#2DD4BF"]},"$preview":{"width":1440,"height":1000}}'>
+const MENUS = [
+  { id: 'streams', label: 'Потоки', items: [ { t: 'Все потоки', href: 'Main.dc.html' } ] },
+  { id: 'history', label: 'История', items: [ { t: 'Журнал' }, { t: 'Инциденты' }, { t: 'Экспорт' } ] },
+  { id: 'settings', label: 'Настройки', items: [ { t: 'Уведомления', href: 'Settings.dc.html' }, { t: 'Камеры', href: 'Settings.dc.html' }, { t: 'Данные и приватность', href: 'Settings.dc.html' } ] },
+  { id: 'video', label: 'Анализ видео', items: [ { t: 'Загрузить запись' }, { t: 'Результаты' } ] }
+];
+const DEC = {
+  alert:   { t: 'Инцидент',   bg: '#FF8A3D', fg: '#0B1220', bar: '#FF8A3D' },
+  abstain: { t: 'Не уверена', bg: '#26344F', fg: '#D3DAE6', bar: '#5A6A88' }
+};
+const FILES = [
+  { id: 'f1', name: 'tverskaya_reception_2026-10-08.mp4', dur: 760, res: '3840×2160', status: 'done', labeled: true,
+    gaps: [ [0, 40], [420, 470] ],
+    eps: [
+      { s: 95, e: 152, track: 4, emo: 'Злость', p: 0.93, dec: 'alert', gt: 'совпадает' },
+      { s: 210, e: 236, track: 7, emo: 'Грусть', p: 0.52, dec: 'abstain', gt: 'негатив' },
+      { s: 318, e: 352, track: 9, emo: 'Нейтрально', p: 0.41, dec: 'abstain', gt: 'нет' },
+      { s: 548, e: 610, track: 15, emo: 'Злость', p: 0.88, dec: 'alert', gt: 'совпадает' },
+      { s: 680, e: 702, track: 18, emo: 'Отвращение', p: 0.81, dec: 'alert', gt: 'ложный' } ],
+    clients: 19, usable: 61 },
+  { id: 'f2', name: 'leninsky_cash_2026-10-09.mp4', dur: 1820, res: '1280×960', status: 'run', prog: 64 },
+  { id: 'f3', name: 'waiting_area_2026-10-09.mkv', dur: 3600, res: '3840×2160', status: 'queue' },
+  { id: 'f4', name: 'entrance_2026-10-07.mp4', dur: 540, res: '2560×1440', status: 'done', labeled: false,
+    gaps: [ [300, 360] ],
+    eps: [ { s: 120, e: 160, track: 2, emo: 'Грусть', p: 0.47, dec: 'abstain', gt: '—' } ], clients: 7, usable: 58 }
+];
+const mmss = (x) => String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0');
+const p2 = (p) => p.toFixed(2).replace('.', ',');
+
+class Component extends DCLogic {
+  state = { open: null, sel: 'f1', ep: 0, exp: false };
+  renderVals() {
+    const accent = this.props.accent ?? '#4C8DFF';
+    const { open, sel, ep, exp } = this.state;
+    const close = () => this.setState({ open: null, exp: false });
+    const menus = MENUS.map((m) => {
+      const isOpen = open === m.id;
+      return {
+        ...m, isOpen, expanded: isOpen ? 'true' : 'false',
+        toggle: () => this.setState({ open: isOpen ? null : m.id }),
+        items: m.items.map((it) => ({ ...it, isLink: !!it.href, isBtn: !it.href, run: close })),
+        btnStyle: 'display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:0;font:inherit;font-weight:500;cursor:pointer;color:#FFFFFF;border:1px solid ' + (isOpen ? '#3A4C6C' : 'transparent') + ';background:' + (isOpen ? '#22304A' : 'transparent') + ';box-shadow:' + (isOpen ? '0 6px 18px rgba(0,0,0,.45)' : 'none')
+      };
+    });
+    const ST = { done: ['Готово', '#3DD68C'], run: ['Обработка', '#F5B544'], queue: ['В очереди', '#8C99B0'] };
+    const files = FILES.map((f) => {
+      const active = f.id === sel;
+      return {
+        name: f.name, meta: mmss(f.dur) + ' · ' + f.res,
+        status: f.status === 'run' ? ST.run[0] + ' ' + f.prog + ' %' : ST[f.status][0],
+        statusStyle: 'color:' + ST[f.status][1],
+        running: f.status === 'run',
+        progStyle: 'display:block;height:100%;width:' + (f.prog || 0) + '%;background:' + accent,
+        pressed: active ? 'true' : 'false',
+        pick: () => this.setState({ sel: f.id, ep: 0 }),
+        style: 'display:flex;flex-direction:column;align-items:flex-start;gap:6px;width:100%;padding:10px 12px;border-radius:0;font:inherit;color:#FFFFFF;text-align:left;cursor:pointer;' +
+          (active ? 'background:#1E2D4A;border:1px solid ' + accent + ';box-shadow:0 6px 18px rgba(0,0,0,.4), inset 3px 0 0 ' + accent : 'background:transparent;border:1px solid #26344F')
+      };
+    });
+    const f = FILES.find((x) => x.id === sel) || FILES[0];
+    const done = f.status === 'done';
+    let cur = null;
+    if (done) {
+      const pct = (x) => (x / f.dur * 100).toFixed(2) + '%';
+      const alerts = f.eps.filter((e) => e.dec === 'alert').length;
+      const abst = f.eps.filter((e) => e.dec === 'abstain').length;
+      cur = {
+        name: f.name, meta: mmss(f.dur) + ' · ' + f.res + ' · анализ 5 к/с, ложных ≤ 15 %',
+        tiles: [
+          { k: 'Инцидентов', v: String(alerts), s: 'из ' + f.eps.length + ' эпизодов' },
+          { k: '«Не уверена»', v: String(abst), s: 'эпизодов' },
+          { k: 'Пригодных кадров', v: f.usable + ' %', s: 'по всей записи' }
+        ],
+        gaps: f.gaps.map(([a, b]) => ({ style: 'position:absolute;top:0;bottom:0;left:' + pct(a) + ';width:' + pct(b - a) + ';background:#1B2840' })),
+        eps: f.eps.map((e, i) => {
+          const on = i === ep;
+          return {
+            range: mmss(e.s) + '–' + mmss(e.e), track: e.track, emo: e.emo, pTxt: p2(e.p),
+            decTxt: DEC[e.dec].t, gt: f.labeled ? e.gt : '—',
+            aria: 'Эпизод ' + mmss(e.s) + ', ' + DEC[e.dec].t,
+            pick: () => this.setState({ ep: i }),
+            chip: 'display:inline-block;padding:1px 8px;font-size:12px;font-weight:500;color:' + DEC[e.dec].fg + ';background:' + DEC[e.dec].bg,
+            rowStyle: on ? 'background:#1E2D4A;box-shadow:inset 3px 0 0 ' + accent : '',
+            barStyle: 'position:absolute;top:4px;bottom:4px;left:' + pct(e.s) + ';width:' + pct(e.e - e.s) + ';min-width:4px;padding:0;border-radius:0;cursor:pointer;background:' + DEC[e.dec].bar + ';border:' + (on ? '2px solid #FFFFFF' : '0') + ';box-shadow:' + (on ? '0 4px 12px rgba(0,0,0,.5)' : 'none')
+          };
+        }),
+        ticks: [0, 0.25, 0.5, 0.75, 1].map((k) => mmss(Math.round(f.dur * k)))
+      };
+    }
+    return {
+      accent, menus, files, cur,
+      hasResult: done, noResult: !done,
+      pendingTitle: f.status === 'run' ? 'Обработка: ' + f.prog + ' %' : 'Запись в очереди',
+      pendingBar: 'height:100%;width:' + (f.prog || 0) + '%;background:' + accent,
+      anyOpen: open !== null || exp, closeMenus: close,
+      expOpen: exp, expExpanded: exp ? 'true' : 'false',
+      toggleExp: () => this.setState({ exp: !exp, open: null }),
+      expBtnStyle: 'display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-radius:0;font:inherit;cursor:pointer;color:#FFFFFF;border:1px solid ' + (exp ? accent : '#3A4C6C') + ';background:' + (exp ? '#22304A' : '#1B2840') + ';box-shadow:' + (exp ? '0 6px 18px rgba(0,0,0,.45)' : 'none'),
+      exports: [
+        { t: 'События и эпизоды', ext: 'JSON', run: close },
+        { t: 'Таблица эпизодов', ext: 'CSV', run: close },
+        { t: 'Видео с рамками лиц и эмоциями', ext: 'MP4', run: close }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

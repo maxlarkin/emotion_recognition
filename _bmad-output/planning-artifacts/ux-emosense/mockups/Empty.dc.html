@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>EmoSense — потоков нет</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B1220}
+a{color:#9DBDFF}a:hover{color:#C9DAFF}
+.mi:hover{background:#2C3C5C !important}
+.tb:hover{background:#1B2840}
+button:focus-visible,a:focus-visible{outline:2px solid #9DBDFF;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0B1220; color: #FFFFFF; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column">
+
+<sc-if value="{{anyOpen}}" hint-placeholder-val="{{ false }}">
+<button aria-label="Закрыть меню" onClick="{{closeMenus}}" style="position: fixed; inset: 0; background: transparent; border: 0; z-index: 40; cursor: default"></button>
+</sc-if>
+
+<header style="position: sticky; top: 0; z-index: 45; background: #111A2B; border-bottom: 1px solid #26344F">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 0 12px; min-height: 44px">
+<div style="display: flex; align-items: center; gap: 10px; padding-right: 8px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M8.5 14.5c1 1.2 2.2 1.8 3.5 1.8s2.5-.6 3.5-1.8"></path><path d="M9 9.5h.01M15 9.5h.01"></path></svg>
+<span style="font-weight: 600; font-size: 17px; letter-spacing: .2px">EmoSense</span>
+</div>
+<nav aria-label="Главное меню" style="display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 auto">
+<sc-for list="{{menus}}" as="m" hint-placeholder-count="4">
+<div style="position: relative">
+<button class="tb" onClick="{{m.toggle}}" aria-expanded="{{m.expanded}}" style="{{m.btnStyle}}">
+<span>{{m.label}}</span>
+<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg>
+</button>
+<sc-if value="{{m.isOpen}}" hint-placeholder-val="{{ false }}">
+<div role="menu" style="position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; min-width: 300px; background: #22304A; border: 1px solid #3A4C6C; border-radius: 0; box-shadow: 0 16px 40px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.4); padding: 6px">
+<div style="padding: 8px 12px 6px; font-size: 12px; color: #A9B6CB; text-transform: uppercase; letter-spacing: .6px">{{m.label}}</div>
+<sc-for list="{{m.items}}" as="it" hint-placeholder-count="3">
+<button class="mi" role="menuitem" onClick="{{it.run}}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; min-height: 48px; padding: 8px 12px; background: transparent; border: 0; border-radius: 0; color: #FFFFFF; text-align: left; cursor: pointer; font: inherit">
+<span style="font-weight: 500">{{it.t}}</span>
+<span style="font-size: 12px; color: #B4BFD1">{{it.d}}</span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</nav>
+<div style="display: flex; align-items: center; gap: 12px">
+<button aria-label="Профиль" style="width: 36px; height: 36px; border-radius: 50%; background: #1B2840; border: 1px solid #26344F; color: #FFFFFF; cursor: pointer; display: grid; place-items: center">
+<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"></path></svg>
+</button>
+</div>
+</div>
+</header>
+
+<main style="flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 48px 20px; min-height: 640px; box-sizing: border-box">
+<div style="max-width: 460px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center">
+<div style="width: 72px; height: 72px; border-radius: 0; background: #152036; border: 1px solid #26344F; display: grid; place-items: center">
+<svg aria-hidden="true" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#B4BFD1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="13" height="12" rx="2"></rect><path d="M16 10l5-3v10l-5-3"></path></svg>
+</div>
+<h1 style="margin: 0; font-size: 24px; font-weight: 600">Потоков пока нет</h1>
+<p style="margin: 0; font-size: 15px; color: #B4BFD1">Добавьте поток с IP-камеры, веб-камеры или по ссылке RTSP / HTTP — распознавание эмоций начнётся сразу после подключения.</p>
+<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 8px">
+<a href="Main.dc.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 20px; background: {{accent}}; color: #FFFFFF; border-radius: 0; font-weight: 500; text-decoration: none">
+<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Добавить поток
+</a>
+<button style="min-height: 44px; padding: 0 18px; background: transparent; border: 1px solid #3A4C6C; border-radius: 0; color: #FFFFFF; font: inherit; cursor: pointer">Проанализировать запись</button>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#4C8DFF","options":["#4C8DFF","#38BDF8","#7C8CFF","#2DD4BF"]},"$preview":{"width":1440,"height":960}}'>
+const MENUS = [
+  { id: 'streams', label: 'Потоки', items: [
+    { t: 'Добавить поток', d: 'RTSP, HTTP, веб-камера' },
+    { t: 'Управление потоками', d: 'Переименовать, отключить, удалить' },
+    { t: 'Группы камер', d: 'Объединить потоки по локациям' } ] },
+  { id: 'history', label: 'История', items: [
+    { t: 'Журнал событий', d: 'Все распознавания по времени' },
+    { t: 'Фильтры и поиск', d: 'По потоку, эмоции, периоду' },
+    { t: 'Экспорт логов', d: 'CSV или JSON' } ] },
+  { id: 'settings', label: 'Настройки', items: [
+    { t: 'Уведомления', d: 'Порог и длительность' },
+    { t: 'Получатели', d: 'Кого оповещать о негативе' },
+    { t: 'Камеры', d: 'Поиск лиц, кроп, частота' },
+    { t: 'Журнал', d: 'Интервал и срок хранения' } ] },
+  { id: 'video', label: 'Анализ видео', items: [
+    { t: 'Загрузить запись', d: 'MP4, AVI, MOV' },
+    { t: 'Очередь обработки', d: 'Статус задач анализа' },
+    { t: 'Отчёты', d: 'Результаты по готовым записям' } ] }
+];
+class Component extends DCLogic {
+  state = { open: null };
+  renderVals() {
+    const accent = this.props.accent ?? '#4C8DFF';
+    const open = this.state.open;
+    const close = () => this.setState({ open: null });
+    const menus = MENUS.map((m) => {
+      const isOpen = open === m.id;
+      return {
+        ...m, isOpen, expanded: isOpen ? 'true' : 'false',
+        toggle: () => this.setState({ open: isOpen ? null : m.id }),
+        items: m.items.map((it) => ({ ...it, run: close })),
+        btnStyle: 'display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:0;font:inherit;font-weight:500;cursor:pointer;color:#FFFFFF;border:1px solid ' + (isOpen ? '#3A4C6C' : 'transparent') + ';background:' + (isOpen ? '#22304A' : 'transparent') + ';box-shadow:' + (isOpen ? '0 6px 18px rgba(0,0,0,.45)' : 'none')
+      };
+    });
+    return { accent, menus, anyOpen: open !== null, closeMenus: close };
+  }
+}
+</script>
+</body>
+</html>

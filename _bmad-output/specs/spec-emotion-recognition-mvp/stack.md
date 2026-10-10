@@ -33,7 +33,10 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
   - Clips are openly licensed, with faces, Russian speech, and moments of clear negative and positive emotion. `demo-videos/ATTRIBUTION.md` records the source, author and licence of each.
 - **Emotion events (CAP-11):**
   - Groups: negative = anger, disgust, fear, sadness; positive = happiness; neutral and surprise raise no event.
-  - Rule per face track on the smoothed fused probabilities: a negative event when the negative-group sum is ≥ 0.6 for ≥ 2 s; a positive event when happiness is ≥ 0.6 for ≥ 2 s. The same kind is not repeated on the same track within 30 s. Thresholds are configurable.
+  - Rule per face track on the smoothed fused probabilities: a negative event when the negative-group sum is ≥ 0.6 for ≥ 2 s; a positive event when happiness is ≥ 0.6 for ≥ 2 s. The same kind is not repeated on the same track within 30 s. The negative emotion subset, both thresholds, the duration and the cooldown come from `/api/settings` (defaults as here) and apply without restart.
+  - Faces below the stream's `min_face_px` (`face_px` at detection size) and tracks younger than 1 s are `abstain`: they feed neither the rule nor an open event.
+  - Per-face `decision`: `alert` while the track's negative event is open (from emit until the negative-group sum drops below the threshold), `watch` when the negative-group sum is ≥ threshold but not yet held for the duration, `abstain` as above, `positive` when happiness is ≥ threshold, else `none`.
+  - Negative events start in state `new`; `POST /api/events/{id}/ack` sets `confirmed` or `false_alarm`. The state is stored only; MVP thresholds do not learn from it.
   - The event is emitted within 1 s of the rule holding and stored in SQLite. An event carries the peak emotion, the mean group probability over the held interval, and the duration. No face image is stored.
 - **System load:** `psutil` for CPU and RAM. NVML (`nvidia-ml-py`) for GPU utilisation and VRAM; it reports null in the CPU image or when no GPU is present.
 - **Latency budget:** per-frame inference (`proc_ms`) p95 ≤ 100 ms with 20 streams; RTSP decode-to-result p95 < 1000 ms.
@@ -43,7 +46,8 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
 
 - **Backend:** Python 3.11+, FastAPI, Uvicorn, ONNX Runtime (CPU EP, or CUDA EP in the GPU profile), PyTorch only where GigaAM requires it, OpenCV, PyAV, SQLite (SQLAlchemy or plain `sqlite3`).
 - **Inference process:** one worker process holds all models. FastAPI talks to it through `multiprocessing` queues: latest-frame slot of size 1 for live video, bounded FIFO for audio and file jobs.
-- **Frontend:** React + TypeScript + Vite. Canvas overlay on top of the local `<video>` element. Chart library bundled locally, no CDN.
+- **Frontend:** React + TypeScript + Vite, React Router (browser history; nginx falls back to `index.html`). Plain CSS over the `tokens.css` custom properties, no UI kit. IBM Plex fonts from `@fontsource` packages. Canvas overlay on top of the local `<video>` element; charts drawn in-house (SVG/canvas), no CDN. Screens and states per `ui.md`.
+- **Settings and streams persistence:** global settings and the stream list (name, site, url, camera_type, settings) are stored in SQLite and survive restarts; `DEFAULT_STREAMS` seeds the list only when it is empty.
 - **Docker:** `docker compose` with services `frontend` (nginx serving the built SPA and proxying `/api` and `/ws` to the backend) and `backend`.
   - Profile `gpu` uses `gpus: all`; the default profile is CPU-only. Both images share the `python:3.11-slim` base: the GPU image gets CUDA 12.6 / cuDNN 9 libraries from the torch cu126 `nvidia-*` wheels, not from a CUDA base image.
   - Weights are downloaded during `docker build` and baked into the image.
@@ -54,7 +58,7 @@ Decisions of record for implementers. Evidence and alternatives live in `researc
 
 ```
 backend/   app/ (api, ws, sessions, export, streams), sources/ (webcam, rtsp, file), inference/ (detector, fer, vad, ser, fusion, tracker, worker), bench/, eval/
-frontend/  src/ (live, multicam grid, event journal, upload, session view, export)
+frontend/  src/ (app shell + router, api/ with mocks, ui/ components, streams grid + detail, live, history, settings, analyze)
 docs/      media-requirements.md (CAP-8), scaling-plan.md (CAP-9), benchmark-report.md, evaluation-report.md
 backend/   app/events (CAP-11 rule engine + journal API)
 demo-videos/ (clips + ATTRIBUTION.md, prep script for per-profile encodes), docker-compose.yml, backend/Dockerfile (+ gpu variant/arg), frontend/Dockerfile

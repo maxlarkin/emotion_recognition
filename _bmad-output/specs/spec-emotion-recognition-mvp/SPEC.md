@@ -4,6 +4,7 @@ companions:
   - stack.md
   - interfaces.md
   - camera-profiles.md
+  - ui.md
   - architecture-diagrams.md
   - ../../planning-artifacts/research/technical-realtime-emotion-recognition-2026-10-01/research.md
 sources: []
@@ -31,7 +32,8 @@ This educational project must deliver, within 1.5 months, a working prototype th
   - **intent:** User uploads a recorded video file and gets the same face and voice emotion analysis over its whole duration.
   - **success:**
     - An mp4 / webm / mkv / avi file of up to 10 min is analysed with visible progress.
-    - The result plays back with face boxes and emotions synced to the video, plus an emotion-over-time chart.
+    - Several files can be queued at once; each shows its own status and progress.
+    - The result plays back with face boxes and emotions synced to the video, plus an emotion-over-time chart, an episode timeline and an episode table, with selection synced between timeline, table and playback.
     - A file with no audio track or no faces finishes without error and reports that fact.
 - **CAP-4**
   - **intent:** User exports the results of any webcam, file or RTSP-stream session.
@@ -83,13 +85,15 @@ This educational project must deliver, within 1.5 months, a working prototype th
     - Each tile shows the analysed frames with face boxes, facial/vocal/fused emotions, the stream's analysis FPS and p50/p95 latency.
     - The screen shows overall CPU, RAM, GPU utilisation and VRAM.
     - Stopping one stream, or losing its connection, does not affect the others. A lost stream shows its status and reconnects when the source returns.
-    - Adding a stream by RTSP URL and camera type in the UI starts its analysis without restarting the system.
+    - Adding a stream by RTSP URL and camera type in the UI starts its analysis without restarting the system. Changing a stream's settings (analysis on/off, fps, detection size, minimum face size) applies without restarting the system.
+    - Opening a stream shows a detail screen with a card per visitor (decision state, negative probability, facial and fused emotion), the vocal emotion, an interval journal, and a small-face warning when faces are below the stream's minimum size (`ui.md`).
 - **CAP-11**
   - **intent:** The manager sees a journal of client emotion events: negative events that need attention and positive events recorded as facts.
   - **success:**
     - A sustained negative or positive emotion on a face track creates one event by the event rule (`stack.md`), within 1 s of the rule holding. A different client produces a new track and its own events.
     - Events from every source are stored and appear live in a Russian journal screen with camera, time, emotion, confidence and duration. Negative events are visually highlighted.
-    - The journal filters by kind, camera and time range and exports CSV and JSON.
+    - A negative event is an incident with state new, confirmed or false alarm. The UI shows the count of new incidents and lets the manager confirm or reject an incident from the stream screen and the journal; the state persists.
+    - The journal filters by kind, state, camera and time range and exports CSV and JSON.
     - In the 20-stream demo, the scripted negative and positive moments in the demo clips each produce an event.
 
 ## Constraints
@@ -101,6 +105,7 @@ This educational project must deliver, within 1.5 months, a working prototype th
 - **Linux and Windows via Docker only.** No native installs required from the user.
 - **Fixed stack:** FastAPI backend and React frontend.
 - **UI text is in Russian.**
+- **UI follows the adopted EmoSense design system** (`ui.md`, `tokens.css`): dark flat theme, no rounded corners, shadows only on dropdowns and active elements, fonts and all assets bundled locally.
 - **The local webcam and microphone are captured in the browser,** not in the container. Device passthrough into Docker on Windows is not viable. Network RTSP sources are ingested server-side.
 - **Pretrained open models only, no fine-tuning in MVP.** Choices and alternatives are listed in `stack.md`.
 - **Inference runs outside the FastAPI event loop.** All sources (webcam, RTSP, files) feed one inference worker through the "source → queue → worker → results" seam. Models load once, and RTSP decoding runs outside the worker.
@@ -110,14 +115,15 @@ This educational project must deliver, within 1.5 months, a working prototype th
 
 - Fine-tuning on Russian media content (planned after the MVP; datasets are listed in `research.md`).
 - Person identification, re-identification across cameras, or tracking repeat visits.
-- Delivering alerts by SMS, messenger or email, and creating tickets in a control system. The MVP stops at the event journal; CAP-9 documents the seam.
+- Delivering alerts by SMS, messenger or email, creating tickets in a control system, and configuring alert recipients or channels. The MVP stops at the event journal and incident states; CAP-9 documents the seam.
+- Self-calibrating thresholds from incident feedback, data retention policies, and storing incident video clips.
 - Running more than 20 streams in the MVP. CAP-9 covers 30–50 and 3000.
 - Authentication, user accounts, multi-user access.
 - ONVIF discovery, PTZ control, recording RTSP video, and RTSP authentication beyond credentials in the URL.
 - Reaching 80% (or 95% / 98%) accuracy. Targets are measured and reported, lower results are acceptable.
 - Exporting annotated video (burned-in overlay MP4) and storing face snapshots with events.
 - Cloud deployment, Kubernetes, horizontal scaling infrastructure.
-- Emotions beyond the 7 basic ones; valence/arousal; micro-expressions.
+- Emotions beyond the 7 basic ones (the design package's contempt is dropped); valence/arousal; micro-expressions.
 
 ## Success signal
 
@@ -127,7 +133,7 @@ On the target laptop, with the network unplugged, a fresh `docker compose --prof
 3. When the user speaks, a vocal emotion appears.
 4. The user uploads a recorded clip, gets its analysis, and downloads CSV/JSON.
 5. The operator starts the 20 emulated cameras of three types. The multi-camera screen shows all 20 analysed in parallel at ≥ 5 fps with per-stream latency under 1 s and the CPU/GPU load.
-6. The journal screen shows negative and positive events from those cameras as they happen, and exports them.
+6. The journal screen shows negative and positive events from those cameras as they happen; the manager confirms one incident and marks another false, and exports the journal.
 
 The regulation (CAP-8) and hardware plan (CAP-9) documents are in the repo, backed by the benchmark (CAP-6) and evaluation (CAP-7) reports.
 
@@ -149,3 +155,4 @@ The regulation (CAP-8) and hardware plan (CAP-9) documents are in the repo, back
 - Security cameras at 6–8 m give ~20–30 px faces at 2K with a 2.8 mm lens and look down steeply. Accept low quality there, or require a 6–8 mm lens or ROI streams?
 - Production webcams at remote points: `getUserMedia` needs HTTPS outside localhost. Publish webcams through an RTSP agent, or serve the UI over HTTPS? (Post-MVP.)
 - 152-FZ: does processing client video for emotions, without identification, need client notice or consent at service points? Legal check before production.
+- Staff in frame: everyone in view, including the manager facing the webcam, is analysed as a client. Workplace emotion recognition of employees is prohibited by EU AI Act art. 5(1)(f) at EU points. Add per-camera staff exclusion zones before production?

@@ -17,10 +17,12 @@ These contracts are fixed between frontend and backend. All timestamps are in mi
 ```json
 {"type":"frame_result","frame_id":123,"capture_ts":1727780000123.4,"proc_ms":38.2,
  "faces":[{"track_id":1,"box":[x,y,w,h],"face":{"anger":0.02,...},"face_label":"happiness",
-           "fused":{"anger":0.01,...},"fused_label":"happiness","confidence":0.81}],
+           "fused":{"anger":0.01,...},"fused_label":"happiness","confidence":0.81,
+           "decision":"none","face_px":112}],
  "audio":{"speech":true,"probs":{"anger":0.1,"disgust":0.0,"fear":0.0,"happiness":0.25,"sadness":0.05,"surprise":0.0,"neutral":0.6},"label":"neutral","window_end_ts":...}}
 ```
 
+- `decision` is one of `alert, watch, abstain, positive, none` (rules in `stack.md` Emotion events). `face_px` is the face box width in pixels of the frame the detector saw (detection size), not of the JPEG sent to the client.
 - `audio.probs` always holds all 7 emotion keys. SER has 4 classes, so `disgust`, `fear` and `surprise` are always 0.
 - Box coordinates are relative to the JPEG that was sent. The client scales them to the displayed video.
 - When frames are dropped, the server answers only the latest frame. Dropped `frame_id`s get no reply.
@@ -52,18 +54,29 @@ This socket is for viewing only. The server pushes updates for every active stre
 |---|---|---|
 | GET | `/api/health` | `{"status":"ok","device":"cuda"|"cpu","models":{...loaded}}` |
 | POST | `/api/files` | multipart upload; returns `{"session_id"}` and starts analysis |
-| GET | `/api/streams` | list streams: `id, name, url (credentials masked), camera_type, state, fps, session_id` |
-| POST | `/api/streams` | `{"name":"Камера 1","url":"rtsp://...","camera_type":"webcam"|"sector"|"security"}`; `camera_type` defaults to `sector`. Returns `{"id"}`, starts ingest and analysis, creates a session of kind `rtsp` |
-| DELETE | `/api/streams/{id}` | stop the stream; its session becomes finished and exportable |
+| GET | `/api/streams` | list streams: `id, name, site, url (credentials masked), camera_type, settings, state, fps, has_audio, source_resolution ([w,h] or null), session_id` |
+| POST | `/api/streams` | `{"name":"Камера 1","site":"Тверская","url":"rtsp://...","camera_type":"webcam"|"sector"|"security","settings":{...}}`; `site` defaults to `""`, `camera_type` to `sector`, `settings` to defaults. Returns `{"id"}`, starts ingest and analysis (unless `settings.enabled` is false), creates a session of kind `rtsp` |
+| PATCH | `/api/streams/{id}` | partial `{name, site, url, camera_type, settings}`; changes to `url`, `camera_type` or `settings` restart only this stream's source. Returns the stream object |
+| POST | `/api/streams/{id}/reconnect` | reconnect now, resetting backoff |
+| POST | `/api/streams/test` | `{"url"}` → `{"ok":true,"resolution":[w,h],"has_audio":true}` or `{"ok":false,"error":"..."}`; opens the source for at most 5 s |
+| GET | `/api/streams/{id}/log?interval_s=10&limit=50` | interval journal of the stream's current session, newest first: `[{"from_ts","to_ts","clients","dominant_emotion","negative_prob","decision"}]`. `clients` = distinct tracks, `negative_prob` = mean negative-group probability, `decision` = worst face decision in the interval. `interval_s` defaults to the journal setting |
+| DELETE | `/api/streams/{id}` | stop and remove the stream; its session becomes finished and exportable |
 | GET | `/api/system` | same payload as the `system` WS message |
-| GET | `/api/sessions` | list sessions: id, kind (`live`, `file` or `rtsp`), created_at, duration, status |
-| GET | `/api/sessions/{id}` | status, progress 0–1, summary (dominant emotion share, faces seen, speech share) |
+| GET | `/api/sessions?kind=` | list sessions: id, kind (`live`, `file` or `rtsp`), stream_id, created_at, duration, status; file sessions add `file_name`, `progress` |
+| GET | `/api/sessions/{id}` | status, progress 0–1, notes, summary (dominant emotion share, faces seen, speech share, `usable_pct`); file sessions add `file_name`, `duration_ms`, `resolution` [w,h] |
 | GET | `/api/sessions/{id}/timeline` | full per-frame results (same face object as WS) plus audio windows |
 | GET | `/api/sessions/{id}/media` | the uploaded file, for playback (file sessions only) |
 | GET | `/api/sessions/{id}/export?format=csv|json` | download |
 | DELETE | `/api/sessions/{id}` | remove session data |
-| GET | `/api/events?kind=negative|positive&stream_id=&from_ms=&to_ms=&limit=200&before_id=` | event objects, newest first |
+| GET | `/api/events?kind=negative|positive&state=new|confirmed|false_alarm&stream_id=&session_id=&from_ms=&to_ms=&limit=200&before_id=` | event objects, newest first |
+| POST | `/api/events/{id}/ack` | `{"state":"confirmed"|"false_alarm"}` for a negative event; returns the event and broadcasts it again as an `event` message |
+| GET | `/api/settings` | `{"events":{"negative_emotions":["anger","disgust","fear","sadness"],"negative_threshold":0.6,"positive_threshold":0.6,"min_duration_s":2,"cooldown_s":30},"journal":{"interval_s":10}}` |
+| PUT | `/api/settings` | same object, validated against the ranges in `ui.md`; applies to new frames without restart |
 | GET | `/api/events/export?format=csv|json` (same filters) | download the journal |
+
+Stream `settings`: `{"enabled":true,"analysis_fps":3|5|8,"detection_size":"auto"|640|1280|1920|2560,"min_face_px":40|48|56|64}`; defaults `true, 5, "auto", 48`. `"auto"` means the camera type's detection size (`camera-profiles.md`). Webcam and file sessions use `min_face_px` 48.
+
+Errors return HTTP 4xx/5xx with `{"detail":"..."}` (FastAPI default).
 
 File-session `status` takes one of these values: `queued`, `processing`, `done`, `failed`. The `notes` array may contain `no_audio_track` or `no_faces_detected`.
 
@@ -80,9 +93,10 @@ File-session `status` takes one of these values: `queued`, `processing`, `done`,
 ```json
 {"event_id":"...","kind":"negative","session_id":"...","stream_id":"cam7","camera_type":"sector",
  "track_id":3,"start_ts":1727780000123.4,"emit_ts":1727780002301.0,"duration_ms":2100,
- "emotion":"anger","group_prob":0.74}
+ "emotion":"anger","group_prob":0.74,"state":"new"}
 ```
 
+- `state` is `new`, `confirmed` or `false_alarm` for negative events and null for positive ones. A new negative event starts as `new`.
 - `kind` is `negative` or `positive`. `emotion` is the strongest emotion of the group over the held interval. `group_prob` is the mean group probability over that interval.
 - `stream_id` and `camera_type` are null for webcam and file sessions. Timestamps use the server clock, except webcam sessions, which use the client `capture_ts`.
-- Export columns (CSV; JSON = array of the same objects): `event_id, kind, session_id, stream_id, camera_type, track_id, start_ts, emit_ts, duration_ms, emotion, group_prob`.
+- Export columns (CSV; JSON = array of the same objects): `event_id, kind, session_id, stream_id, camera_type, track_id, start_ts, emit_ts, duration_ms, emotion, group_prob, state`.

@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>EmoSense — настройки</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B1220}
+a{color:#9DBDFF}a:hover{color:#C9DAFF}
+.mi:hover{background:#2C3C5C !important}
+.tb:hover{background:#1B2840}
+.nv:hover{background:#152036}
+.rw:hover{background:#111A2B}
+select,input[type=text],input[type=search]{height:32px;padding:0 10px;background:#0B1220;border:1px solid #2E3D5A;border-radius:0;color:#FFFFFF;font:inherit;font-size:13px;box-sizing:border-box}
+select{min-width:180px}
+input[type=checkbox]{width:16px;height:16px;accent-color:#4C8DFF;cursor:pointer;margin:0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:48px;border-bottom:1px solid #1C2840}
+.lb{color:#D3DAE6}
+.sb{width:32px;height:32px;background:transparent;border:1px solid #2E3D5A;border-radius:0;color:#FFFFFF;font:inherit;font-size:16px;cursor:pointer}
+.sv{min-width:72px;text-align:center;font-family:'IBM Plex Mono',monospace}
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #9DBDFF;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0B1220; color: #FFFFFF; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.45">
+
+<sc-if value="{{anyOpen}}" hint-placeholder-val="{{ false }}">
+<button aria-label="Закрыть меню" onClick="{{closeMenus}}" style="position: fixed; inset: 0; background: transparent; border: 0; z-index: 40; cursor: default"></button>
+</sc-if>
+
+<header style="position: sticky; top: 0; z-index: 45; background: #111A2B; border-bottom: 1px solid #26344F">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 0 12px; min-height: 44px">
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 8px; padding-right: 8px; color: #FFFFFF; text-decoration: none">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M8.5 14.5c1 1.2 2.2 1.8 3.5 1.8s2.5-.6 3.5-1.8"></path><path d="M9 9.5h.01M15 9.5h.01"></path></svg>
+<span style="font-weight: 600; font-size: 16px">EmoSense</span>
+</a>
+<nav aria-label="Главное меню" style="display: flex; flex-wrap: wrap; gap: 2px; flex: 1 1 auto">
+<sc-for list="{{menus}}" as="m" hint-placeholder-count="4">
+<div style="position: relative">
+<button class="tb" onClick="{{m.toggle}}" aria-expanded="{{m.expanded}}" style="{{m.btnStyle}}">
+<span>{{m.label}}</span>
+<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg>
+</button>
+<sc-if value="{{m.isOpen}}" hint-placeholder-val="{{ false }}">
+<div role="menu" style="position: absolute; top: calc(100% + 4px); left: 0; z-index: 50; min-width: 240px; background: #22304A; border: 1px solid #3A4C6C; box-shadow: 0 16px 40px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.4); padding: 4px">
+<sc-for list="{{m.items}}" as="it" hint-placeholder-count="3">
+<sc-if value="{{it.isLink}}" hint-placeholder-val="{{ false }}">
+<a class="mi" role="menuitem" href="{{it.href}}" style="display: flex; align-items: center; min-height: 40px; box-sizing: border-box; padding: 0 12px; color: #FFFFFF; text-decoration: none">{{it.t}}</a>
+</sc-if>
+<sc-if value="{{it.isBtn}}" hint-placeholder-val="{{ true }}">
+<button class="mi" role="menuitem" onClick="{{it.run}}" style="display: flex; align-items: center; width: 100%; min-height: 40px; padding: 0 12px; background: transparent; border: 0; border-radius: 0; color: #FFFFFF; text-align: left; cursor: pointer; font: inherit">{{it.t}}</button>
+</sc-if>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</nav>
+</div>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; padding: 16px 12px; box-sizing: border-box">
+
+<nav aria-label="Разделы настроек" style="flex: 1 1 180px; max-width: 220px; display: flex; flex-direction: column">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+<button class="nv" onClick="{{t.pick}}" aria-current="{{t.current}}" style="{{t.style}}">{{t.label}}</button>
+</sc-for>
+</nav>
+
+<main style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+
+<sc-if value="{{isNotify}}" hint-placeholder-val="{{ false }}">
+<section style="display: flex; flex-direction: column">
+<h2 style="margin: 0 0 4px; font-size: 18px; font-weight: 600">Уведомления</h2>
+<div class="row">
+<span class="lb">Негативные эмоции</span>
+<div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end">
+<sc-for list="{{emos}}" as="e" hint-placeholder-count="5">
+<button onClick="{{e.toggle}}" aria-pressed="{{e.pressed}}" style="{{e.style}}">{{e.name}}</button>
+</sc-for>
+</div>
+</div>
+<sc-for list="{{steppers}}" as="s" hint-placeholder-count="3">
+<div class="row">
+<span class="lb">{{s.label}}</span>
+<div style="display: flex; align-items: center; gap: 4px">
+<button class="sb" aria-label="Уменьшить" onClick="{{s.dec}}">−</button>
+<span class="sv">{{s.value}}</span>
+<button class="sb" aria-label="Увеличить" onClick="{{s.inc}}">+</button>
+</div>
+</div>
+</sc-for>
+<div class="row">
+<span class="lb">Подтверждение получателем</span>
+<button onClick="{{toggleConfirm}}" aria-pressed="{{confirmPressed}}" aria-label="Подтверждение получателем" style="background: transparent; border: 0; padding: 8px 0; cursor: pointer"><span style="{{confirmTrack}}"><span style="{{confirmKnob}}"></span></span></button>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{isPeople}}" hint-placeholder-val="{{ false }}">
+<section style="display: flex; flex-direction: column">
+<h2 style="margin: 0 0 4px; font-size: 18px; font-weight: 600">Получатели</h2>
+<sc-for list="{{people}}" as="p" hint-placeholder-count="2">
+<div class="row">
+<span style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0">
+<span class="lb">{{p.name}}</span>
+<span style="font-size: 13px; color: #8C99B0">{{p.ch}} · {{p.contact}} · {{p.site}}</span>
+</span>
+<span style="display: flex; align-items: center; gap: 12px">
+<button onClick="{{p.toggle}}" aria-pressed="{{p.pressed}}" aria-label="Уведомлять" style="background: transparent; border: 0; padding: 8px 0; cursor: pointer"><span style="{{p.track}}"><span style="{{p.knob}}"></span></span></button>
+<button onClick="{{p.remove}}" aria-label="Удалить получателя" style="width: 32px; height: 32px; display: grid; place-items: center; background: transparent; border: 0; color: #8C99B0; cursor: pointer">
+<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+</button>
+</span>
+</div>
+</sc-for>
+<div class="row" style="flex-wrap: wrap; padding: 8px 0">
+<label for="pn" class="sr">Имя</label>
+<input id="pn" type="text" placeholder="Имя" value="{{newName}}" onChange="{{setName}}" style="flex: 2 1 160px">
+<label for="pc" class="sr">Канал</label>
+<select id="pc" value="{{newCh}}" onChange="{{setCh}}" style="min-width: 120px">
+<option value="Telegram">Telegram</option>
+<option value="SMS">SMS</option>
+<option value="Email">Email</option>
+<option value="Push">Push</option>
+<option value="Тикет">Тикет</option>
+</select>
+<label for="pk" class="sr">Контакт</label>
+<input id="pk" type="text" placeholder="Контакт" value="{{newContact}}" onChange="{{setContact}}" style="flex: 2 1 160px">
+<label for="ps" class="sr">Точки</label>
+<select id="ps" value="{{newSite}}" onChange="{{setSite}}" style="min-width: 150px">
+<option value="Все точки">Все точки</option>
+<option value="Тверская">Тверская</option>
+<option value="Ленинский">Ленинский</option>
+</select>
+<button onClick="{{addPerson}}" style="height: 32px; padding: 0 14px; background: {{accent}}; border: 0; border-radius: 0; color: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">Добавить</button>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{isCams}}" hint-placeholder-val="{{ true }}">
+<section style="display: flex; flex-direction: column">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px">
+<h2 style="margin: 0; font-size: 18px; font-weight: 600">Камеры</h2>
+<div style="position: relative; flex: 0 1 280px">
+<label for="cq" class="sr">Поиск камеры</label>
+<input id="cq" type="search" placeholder="Поиск" value="{{cq}}" onChange="{{setCq}}" style="width: 100%; padding-left: 32px">
+<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8C99B0" stroke-width="2" stroke-linecap="round" style="position: absolute; left: 10px; top: 9px"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+</div>
+</div>
+
+<div class="row" style="border-top: 1px solid #1C2840">
+<label style="display: inline-flex; align-items: center; gap: 10px; cursor: pointer; padding-left: 12px">
+<input type="checkbox" checked="{{allSel}}" onChange="{{toggleAll}}"><span class="lb">Все камеры</span><span style="color: #8C99B0; font-size: 13px">{{selCount}}</span>
+</label>
+<button onClick="{{toggleBulk}}" aria-expanded="{{bulkExpanded}}" style="{{bulkBtnStyle}}">Настроить выбранные</button>
+</div>
+
+<sc-if value="{{bulkOpen}}" hint-placeholder-val="{{ false }}">
+<div style="margin: 8px 0; padding: 4px 16px 12px; background: #111A2B; border: 1px solid {{accent}}; box-shadow: 0 8px 20px rgba(0,0,0,.4)">
+<sc-for list="{{bulkFields}}" as="f" hint-placeholder-count="8">
+<div class="row">
+<span class="lb">{{f.label}}</span>
+<div role="group" aria-label="{{f.label}}" style="display: flex; flex-wrap: wrap; gap: 2px; justify-content: flex-end">
+<sc-for list="{{f.btns}}" as="o" hint-placeholder-count="3"><button onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" style="{{o.style}}">{{o.label}}</button></sc-for>
+</div>
+</div>
+</sc-for>
+<div style="display: flex; gap: 8px; justify-content: flex-end; padding-top: 12px">
+<button onClick="{{toggleBulk}}" style="height: 32px; padding: 0 14px; background: transparent; border: 1px solid #2E3D5A; border-radius: 0; color: #FFFFFF; font: inherit; font-size: 13px; cursor: pointer">Отмена</button>
+<button onClick="{{applyBulk}}" style="{{applyStyle}}">Применить</button>
+</div>
+</div>
+</sc-if>
+
+<sc-for list="{{cams}}" as="c" hint-placeholder-count="5">
+<div style="{{c.wrapStyle}}">
+<div style="display: flex; align-items: stretch; min-height: 48px">
+<label style="display: grid; place-items: center; width: 40px; flex: none; cursor: pointer"><span class="sr">Выбрать {{c.name}}</span><input type="checkbox" checked="{{c.sel}}" onChange="{{c.toggle}}"></label>
+<button class="rw" onClick="{{c.expand}}" aria-expanded="{{c.expanded}}" style="flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 16px; padding: 0 8px 0 0; background: transparent; border: 0; border-radius: 0; color: #FFFFFF; font: inherit; text-align: left; cursor: pointer">
+<span style="flex: 1 1 auto; min-width: 0"><span class="lb">{{c.name}}</span> <span style="color: #8C99B0; font-size: 13px">{{c.site}}</span></span>
+<span style="font-size: 12px; color: #8C99B0; font-family: 'IBM Plex Mono', monospace; white-space: nowrap">{{c.summary}}</span>
+<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8C99B0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="{{c.chev}}"><path d="M6 9l6 6 6-6"></path></svg>
+</button>
+</div>
+<sc-if value="{{c.open}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 0 8px 8px 40px">
+<div class="row">
+<span class="lb">Анализ</span>
+<button onClick="{{c.toggleOn}}" aria-pressed="{{c.onPressed}}" aria-label="Анализ" style="background: transparent; border: 0; padding: 8px 0; cursor: pointer"><span style="{{c.track}}"><span style="{{c.knob}}"></span></span></button>
+</div>
+<sc-for list="{{c.fields}}" as="f" hint-placeholder-count="8">
+<div class="row">
+<span class="lb">{{f.label}}</span>
+<div role="group" aria-label="{{f.label}}" style="display: flex; flex-wrap: wrap; gap: 2px; justify-content: flex-end">
+<sc-for list="{{f.btns}}" as="o" hint-placeholder-count="3"><button onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" style="{{o.style}}">{{o.label}}</button></sc-for>
+</div>
+</div>
+</sc-for>
+<div class="row" style="border-bottom: 0">
+<span class="lb">Адрес потока</span>
+<input type="text" aria-label="Адрес потока" value="{{c.url}}" onChange="{{c.setUrl}}" style="width: 320px; max-width: 100%">
+</div>
+</div>
+</sc-if>
+</div>
+</sc-for>
+<sc-if value="{{noCams}}" hint-placeholder-val="{{ false }}">
+<span style="padding: 12px 0; font-size: 13px; color: #8C99B0">Ничего не найдено</span>
+</sc-if>
+</section>
+</sc-if>
+
+<sc-if value="{{isData}}" hint-placeholder-val="{{ false }}">
+<section style="display: flex; flex-direction: column">
+<h2 style="margin: 0 0 4px; font-size: 18px; font-weight: 600">Журнал и данные</h2>
+<sc-for list="{{dataFields}}" as="f" hint-placeholder-count="3">
+<div class="row">
+<span class="lb">{{f.label}}</span>
+<div role="group" aria-label="{{f.label}}" style="display: flex; flex-wrap: wrap; gap: 2px; justify-content: flex-end">
+<sc-for list="{{f.btns}}" as="o" hint-placeholder-count="4"><button onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" style="{{o.style}}">{{o.label}}</button></sc-for>
+</div>
+</div>
+</sc-for>
+</section>
+</sc-if>
+
+<div style="display: flex; justify-content: flex-end; gap: 8px">
+<a href="Main.dc.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border: 1px solid #2E3D5A; color: #FFFFFF; text-decoration: none">Отмена</a>
+<a href="Main.dc.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 18px; background: {{accent}}; color: #FFFFFF; text-decoration: none; font-weight: 500">Сохранить</a>
+</div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#4C8DFF","options":["#4C8DFF","#38BDF8","#7C8CFF","#2DD4BF"]},"$preview":{"width":1440,"height":1000}}'>
+const MENUS = [
+  { id: 'streams', label: 'Потоки', items: [ { t: 'Все потоки', href: 'Main.dc.html' }, { t: 'Добавить поток' } ] },
+  { id: 'history', label: 'История', items: [ { t: 'Журнал' }, { t: 'Инциденты' }, { t: 'Экспорт' } ] },
+  { id: 'settings', label: 'Настройки', items: [ { t: 'Уведомления', tab: 'notify' }, { t: 'Получатели', tab: 'people' }, { t: 'Камеры', tab: 'cams' }, { t: 'Журнал и данные', tab: 'data' } ] },
+  { id: 'video', label: 'Анализ видео', items: [ { t: 'Загрузить запись', href: 'Analyze.dc.html' }, { t: 'Результаты', href: 'Analyze.dc.html' } ] }
+];
+const TABS = [ { id: 'notify', label: 'Уведомления' }, { id: 'people', label: 'Получатели' }, { id: 'cams', label: 'Камеры' }, { id: 'data', label: 'Журнал и данные' } ];
+const EMOS = ['Злость','Грусть','Страх','Отвращение','Презрение'];
+const FIELDS = [
+  { key: 'src', label: 'Поток для поиска лиц', opts: ['Субпоток', 'Основной'] },
+  { key: 'det', label: 'Размер кадра для поиска', opts: ['Авто', '384', '640', '960', '1280', 'Тайлы 2×2'] },
+  { key: 'crop', label: 'Кроп лица', opts: ['160×160', '224×224', '260×260'] },
+  { key: 'fps', label: 'Частота анализа', opts: ['3 к/с', '5 к/с', '8 к/с'] },
+  { key: 'minFace', label: 'Мин. размер лица', opts: ['40 px', '48 px', '56 px', '64 px'] },
+  { key: 'blur', label: 'Мин. резкость', opts: ['Низкая', 'Средняя', 'Высокая'] },
+  { key: 'pose', label: 'Макс. поворот головы', opts: ['30°', '45°', '60°'] },
+  { key: 'rot', label: 'Поворот кадра', opts: ['0°', '90°', '180°', '270°'] }
+];
+const BASE = { src: 'Субпоток', det: 'Авто', crop: '224×224', fps: '5 к/с', minFace: '56 px', blur: 'Средняя', pose: '45°', rot: '0°', on: true };
+const CAMS = [
+  { id: 1, site: 'Тверская', name: 'Ресепшн', url: 'rtsp://192.168.1.22:554/main' },
+  { id: 2, site: 'Тверская', name: 'Вход', url: 'rtsp://192.168.1.21:554/main' },
+  { id: 3, site: 'Тверская', name: 'Зона ожидания', url: 'rtsp://10.0.0.15:554/main', det: 'Тайлы 2×2', fps: '3 к/с', minFace: '40 px' },
+  { id: 4, site: 'Ленинский', name: 'Касса', url: 'webcam://0', src: 'Основной', det: '640', minFace: '64 px' },
+  { id: 5, site: 'Ленинский', name: 'Вход', url: 'rtsp://192.168.2.21:554/main', on: false }
+];
+const emptyBulk = () => { const b = { on: '' }; FIELDS.forEach((f) => { b[f.key] = ''; }); return b; };
+const DATA = [
+  { key: 'iv', label: 'Интервал записи журнала', opts: ['5 с', '10 с', '30 с', '60 с'] },
+  { key: 'keep', label: 'Хранить журнал', opts: ['30 дней', '90 дней', '180 дней', '365 дней'] },
+  { key: 'clip', label: 'Видеофрагмент инцидента', opts: ['Не хранить', '24 ч', '72 ч'] }
+];
+
+class Component extends DCLogic {
+  state = {
+    open: null, tab: 'cams',
+    emo: { 'Злость': true, 'Грусть': true, 'Страх': true, 'Отвращение': true, 'Презрение': false },
+    alpha: 15, dur: 20, rate: 2, confirm: true,
+    people: [ { id: 1, name: 'Менеджер по качеству', ch: 'Telegram', contact: '[@контакт]', site: 'Все точки', on: true } ],
+    newName: '', newCh: 'Telegram', newContact: '', newSite: 'Все точки',
+    cams: CAMS.map((c) => ({ ...BASE, ...c, sel: false, open: c.id === 1 })),
+    cq: '', bulkOpen: false, bulk: emptyBulk(),
+    data: { iv: '10 с', keep: '90 дней', clip: '72 ч' }
+  };
+  renderVals() {
+    const accent = this.props.accent ?? '#4C8DFF';
+    const s = this.state;
+    const close = () => this.setState({ open: null });
+    const menus = MENUS.map((m) => {
+      const isOpen = s.open === m.id;
+      return {
+        ...m, isOpen, expanded: isOpen ? 'true' : 'false',
+        toggle: () => this.setState({ open: isOpen ? null : m.id }),
+        items: m.items.map((it) => ({ ...it, isLink: !!it.href, isBtn: !it.href, run: () => this.setState(it.tab ? { open: null, tab: it.tab } : { open: null }) })),
+        btnStyle: 'display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:0;font:inherit;font-weight:500;cursor:pointer;color:#FFFFFF;border:1px solid ' + (isOpen ? '#3A4C6C' : 'transparent') + ';background:' + (isOpen ? '#22304A' : 'transparent') + ';box-shadow:' + (isOpen ? '0 6px 18px rgba(0,0,0,.45)' : 'none')
+      };
+    });
+    const tabs = TABS.map((t) => {
+      const on = t.id === s.tab;
+      return { ...t, current: on ? 'page' : 'false', pick: () => this.setState({ tab: t.id }),
+        style: 'height:40px;padding:0 12px;border:0;border-radius:0;font:inherit;text-align:left;cursor:pointer;color:' + (on ? '#FFFFFF' : '#B4BFD1') + ';background:' + (on ? '#152036' : 'transparent') + ';box-shadow:' + (on ? 'inset 2px 0 0 ' + accent : 'none') };
+    });
+    const segBtns = (opts, value, onPick) => opts.map((o) => {
+      const on = o === value;
+      return { label: o, pressed: on ? 'true' : 'false', pick: () => onPick(o, on),
+        style: 'height:30px;padding:0 10px;border-radius:0;font:inherit;font-size:13px;cursor:pointer;color:' + (on ? '#FFFFFF' : '#B4BFD1') + ';background:' + (on ? '#26344F' : 'transparent') + ';border:1px solid ' + (on ? accent : '#2E3D5A') };
+    });
+    const sw = (on) => ({
+      track: 'display:block;position:relative;width:36px;height:20px;background:' + (on ? accent : '#2E3D5A'),
+      knob: 'position:absolute;top:3px;left:' + (on ? '19px' : '3px') + ';width:14px;height:14px;background:#FFFFFF'
+    });
+
+    const emos = EMOS.map((name) => {
+      const on = !!s.emo[name];
+      return { name, pressed: on ? 'true' : 'false',
+        toggle: () => this.setState({ emo: { ...s.emo, [name]: !on } }),
+        style: 'height:32px;padding:0 12px;border-radius:0;font:inherit;font-size:13px;cursor:pointer;color:' + (on ? '#0B1220' : '#B4BFD1') + ';background:' + (on ? '#FF8A3D' : 'transparent') + ';border:1px solid ' + (on ? '#FF8A3D' : '#2E3D5A') };
+    });
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const step = (key, d, a, b) => () => this.setState({ [key]: clamp(s[key] + d, a, b) });
+    const steppers = [
+      { label: 'Допустимая доля ложных', value: s.alpha + ' %', dec: step('alpha', -5, 5, 30), inc: step('alpha', 5, 5, 30) },
+      { label: 'Эпизод не короче', value: s.dur + ' с', dec: step('dur', -5, 5, 120), inc: step('dur', 5, 5, 120) },
+      { label: 'Уведомлений на точку в час', value: '≤ ' + s.rate, dec: step('rate', -1, 1, 10), inc: step('rate', 1, 1, 10) }
+    ];
+    const cT = sw(s.confirm);
+
+    const people = s.people.map((p) => {
+      const t = sw(p.on);
+      return {
+        ...p, pressed: p.on ? 'true' : 'false', track: t.track, knob: t.knob,
+        toggle: () => this.setState({ people: s.people.map((q) => q.id === p.id ? { ...q, on: !q.on } : q) }),
+        remove: () => this.setState({ people: s.people.filter((q) => q.id !== p.id) })
+      };
+    });
+    const addPerson = () => {
+      if (!s.newName.trim()) return;
+      this.setState({ people: [...s.people, { id: Date.now(), name: s.newName.trim(), ch: s.newCh, contact: s.newContact.trim() || '—', site: s.newSite, on: true }], newName: '', newContact: '' });
+    };
+
+    const upd = (id, patch) => this.setState({ cams: s.cams.map((c) => c.id === id ? { ...c, ...patch } : c) });
+    const q = s.cq.trim().toLowerCase();
+    const cams = s.cams.filter((c) => !q || (c.name + ' ' + c.site + ' ' + c.url).toLowerCase().includes(q)).map((c) => {
+      const t = sw(c.on);
+      return {
+        ...c, track: t.track, knob: t.knob, onPressed: c.on ? 'true' : 'false',
+        toggleOn: () => upd(c.id, { on: !c.on }),
+        setUrl: (e) => upd(c.id, { url: e.target.value }),
+        fields: FIELDS.map((f) => ({ ...f, btns: segBtns(f.opts, c[f.key], (o) => upd(c.id, { [f.key]: o })) })),
+        expanded: c.open ? 'true' : 'false',
+        toggle: () => upd(c.id, { sel: !c.sel }),
+        expand: () => upd(c.id, { open: !c.open }),
+        summary: c.on ? c.det + ' · ' + c.fps : 'выключен',
+        chev: 'flex:none;transition:transform .15s;transform:rotate(' + (c.open ? '180' : '0') + 'deg)',
+        wrapStyle: 'border-bottom:1px solid #1C2840;' + (c.open ? 'background:#0F1828;' : '') + (c.sel ? 'box-shadow:inset 2px 0 0 ' + accent + ';' : '')
+      };
+    });
+    const selCount = s.cams.filter((c) => c.sel).length;
+    const allSel = selCount === s.cams.length;
+    const bulkFields = [{ key: 'on', label: 'Анализ', opts: ['Включён', 'Выключен'] }, ...FIELDS].map((f) => ({
+      ...f, btns: segBtns(f.opts, s.bulk[f.key], (o, on) => this.setState({ bulk: { ...s.bulk, [f.key]: on ? '' : o } }))
+    }));
+    const canApply = selCount > 0 && Object.values(s.bulk).some((v) => v);
+    const applyBulk = () => {
+      if (!canApply) return;
+      const patch = {};
+      Object.entries(s.bulk).forEach(([k, v]) => { if (v) patch[k] = k === 'on' ? v === 'Включён' : v; });
+      this.setState({ cams: s.cams.map((c) => c.sel ? { ...c, ...patch } : c), bulk: emptyBulk(), bulkOpen: false });
+    };
+
+    const dataFields = DATA.map((f) => ({ ...f, btns: segBtns(f.opts, s.data[f.key], (o) => this.setState({ data: { ...s.data, [f.key]: o } })) }));
+
+    return {
+      accent, menus, tabs, emos, steppers, people, cams, bulkFields, dataFields,
+      isNotify: s.tab === 'notify', isPeople: s.tab === 'people', isCams: s.tab === 'cams', isData: s.tab === 'data',
+      anyOpen: s.open !== null, closeMenus: close,
+      confirmPressed: s.confirm ? 'true' : 'false', toggleConfirm: () => this.setState({ confirm: !s.confirm }), confirmTrack: cT.track, confirmKnob: cT.knob,
+      newName: s.newName, newCh: s.newCh, newContact: s.newContact, newSite: s.newSite,
+      setName: (e) => this.setState({ newName: e.target.value }),
+      setCh: (e) => this.setState({ newCh: e.target.value }),
+      setContact: (e) => this.setState({ newContact: e.target.value }),
+      setSite: (e) => this.setState({ newSite: e.target.value }),
+      addPerson,
+      cq: s.cq, setCq: (e) => this.setState({ cq: e.target.value }), noCams: cams.length === 0,
+      selCount, allSel,
+      toggleAll: () => this.setState({ cams: s.cams.map((c) => ({ ...c, sel: !allSel })) }),
+      bulkOpen: s.bulkOpen && selCount > 0, bulkExpanded: s.bulkOpen ? 'true' : 'false',
+      toggleBulk: () => { if (selCount > 0 || s.bulkOpen) this.setState({ bulkOpen: !s.bulkOpen, bulk: emptyBulk() }); },
+      bulkBtnStyle: 'height:32px;padding:0 12px;border-radius:0;font:inherit;font-size:13px;cursor:' + (selCount ? 'pointer' : 'not-allowed') + ';color:' + (selCount ? '#FFFFFF' : '#8C99B0') + ';border:1px solid ' + (selCount ? accent : '#2E3D5A') + ';background:' + (s.bulkOpen && selCount ? accent : 'transparent'),
+      applyBulk,
+      applyStyle: 'height:32px;padding:0 14px;border:0;border-radius:0;font:inherit;font-size:13px;font-weight:500;color:#FFFFFF;cursor:' + (canApply ? 'pointer' : 'not-allowed') + ';background:' + (canApply ? accent : '#2A3854')
+    };
+  }
+}
+</script>
+</body>
+</html>
